@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
 import { Plus, Search, Filter, QrCode, Edit2, Trash2, Beef } from 'lucide-react'
 import { useAnimalStore } from '../../store/useAnimalStore'
 import DataTable from '../../components/ui/DataTable'
@@ -10,18 +9,33 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { QRCodeSVG } from 'qrcode.react'
 
 export default function Animals() {
-  const { loadAnimals, getFilteredAnimals, getStats, setSearchQuery, searchQuery, filters, setFilter, deleteAnimal } = useAnimalStore()
+  const { loadAnimals, getFilteredAnimals, getStats, setSearchQuery, searchQuery, filters, setFilter, deleteAnimal, addAnimal } = useAnimalStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isQRModalOpen, setIsQRModalOpen] = useState(false)
   const [selectedAnimal, setSelectedAnimal] = useState(null)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
 
-  useEffect(() => {
-    loadAnimals()
-  }, [])
+  // Form State
+  const [formData, setFormData] = useState({
+    tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: 'Healthy', weight: '', age: '', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: ''
+  })
+
+  useEffect(() => { loadAnimals() }, [])
 
   const filteredData = getFilteredAnimals()
   const stats = getStats()
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    await addAnimal({
+      ...formData,
+      weight: Number(formData.weight) || 0,
+      age: Number(formData.age) || 0,
+      purchasePrice: Number(formData.purchasePrice) || 0
+    })
+    setIsModalOpen(false)
+    setFormData({ tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: 'Healthy', weight: '', age: '', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: '' })
+  }
 
   const columns = [
     { key: 'tagNumber', label: 'Tag ID', render: (val, row) => (
@@ -68,7 +82,6 @@ export default function Animals() {
         </button>
       </div>
 
-      {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="glass-card p-4 flex items-center justify-between">
           <div><p className="text-xs text-slate-400">Total Herd</p><p className="text-2xl font-display font-bold text-white">{stats.total}</p></div>
@@ -88,18 +101,11 @@ export default function Animals() {
         </div>
       </div>
 
-      {/* Filters & Table */}
       <div className="glass-card p-5">
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="search-bar flex-1">
             <Search size={16} className="text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search by tag, name or breed..." 
-              className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+            <input type="text" placeholder="Search by tag, name or breed..." className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)' }}>
@@ -121,30 +127,47 @@ export default function Animals() {
             </div>
           </div>
         </div>
-
         <DataTable columns={columns} data={filteredData} pageSize={15} />
       </div>
 
-      {/* Add Modal Placeholder */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Animal">
-        <p className="text-slate-400 text-center py-8">Form component goes here.</p>
-        <div className="flex justify-end gap-3 mt-4">
-          <button className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
-          <button className="btn-primary" onClick={() => setIsModalOpen(false)}>Save Record</button>
-        </div>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Tag Number *</label><input required type="text" className="input-field" value={formData.tagNumber} onChange={e => setFormData({...formData, tagNumber: e.target.value})} placeholder="e.g. JBS-001" /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Name</label><input type="text" className="input-field" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Bella" /></div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Breed</label>
+              <select className="input-field" value={formData.breed} onChange={e => setFormData({...formData, breed: e.target.value})}>
+                <option>Friesian</option><option>Ayrshire</option><option>Guernsey</option><option>Jersey</option><option>Boran</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Gender</label>
+              <select className="input-field" value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})}>
+                <option>Female</option><option>Male</option>
+              </select>
+            </div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Weight (kg)</label><input type="number" className="input-field" value={formData.weight} onChange={e => setFormData({...formData, weight: e.target.value})} /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Age (months)</label><input type="number" className="input-field" value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Status</label>
+              <select className="input-field" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                <option>Healthy</option><option>Sick</option><option>Pregnant</option><option>Calf</option>
+              </select>
+            </div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Color</label><input type="text" className="input-field" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} /></div>
+          </div>
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Animal</button>
+          </div>
+        </form>
       </Modal>
 
-      {/* QR Modal */}
       <Modal isOpen={isQRModalOpen} onClose={() => setIsQRModalOpen(false)} title={`QR Tag: ${selectedAnimal?.tagNumber}`} size="sm">
         {selectedAnimal && (
           <div className="flex flex-col items-center py-6">
             <div className="bg-white p-4 rounded-2xl mb-6">
-              <QRCodeSVG 
-                value={`jbs-farm://animal/${selectedAnimal.id}`} 
-                size={200} 
-                level="Q"
-                imageSettings={{ src: '/vite.svg', x: undefined, y: undefined, height: 24, width: 24, excavate: true }}
-              />
+              <QRCodeSVG value={`jbs-farm://animal/${selectedAnimal.id}`} size={200} level="Q" imageSettings={{ src: '/vite.svg', x: undefined, y: undefined, height: 24, width: 24, excavate: true }} />
             </div>
             <h3 className="font-display font-bold text-2xl text-white">{selectedAnimal.tagNumber}</h3>
             <p className="text-slate-400">{selectedAnimal.name} • {selectedAnimal.breed}</p>
@@ -156,14 +179,7 @@ export default function Animals() {
         )}
       </Modal>
 
-      {/* Delete Dialog */}
-      <ConfirmDialog 
-        isOpen={isDeleteOpen}
-        onClose={() => setIsDeleteOpen(false)}
-        onConfirm={() => { if(selectedAnimal) deleteAnimal(selectedAnimal.id) }}
-        title="Delete Animal Record?"
-        message={`Are you sure you want to permanently delete the record for ${selectedAnimal?.tagNumber}? This action cannot be undone and will remove all associated health and milk records.`}
-      />
+      <ConfirmDialog isOpen={isDeleteOpen} onClose={() => setIsDeleteOpen(false)} onConfirm={() => { if(selectedAnimal) deleteAnimal(selectedAnimal.id) }} title="Delete Animal Record?" message={`Are you sure you want to permanently delete the record for ${selectedAnimal?.tagNumber}?`} />
     </div>
   )
 }
