@@ -40,14 +40,21 @@ function App() {
   useEffect(() => {
     initTheme()
     
-    // Initialize Supabase if credentials exist
-    db.settings.get('supabaseUrl').then(urlRow => {
-      db.settings.get('supabaseKey').then(keyRow => {
-        if (urlRow?.value && keyRow?.value) {
-          initSupabase(urlRow.value, keyRow.value)
-        }
+    // Initialize Supabase from env variables
+    const envUrl = import.meta.env.VITE_SUPABASE_URL
+    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (envUrl && envKey) {
+      initSupabase(envUrl, envKey)
+    } else {
+      // Fallback to settings DB
+      db.settings.get('supabaseUrl').then(urlRow => {
+        db.settings.get('supabaseKey').then(keyRow => {
+          if (urlRow?.value && keyRow?.value) {
+            initSupabase(urlRow.value, keyRow.value)
+          }
+        })
       })
-    })
+    }
 
     // Start offline sync engine listener
     const cleanupSync = initSyncEngine()

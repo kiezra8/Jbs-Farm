@@ -1,12 +1,12 @@
 import { db } from '../db/schema'
 import { useSyncStore } from '../store/useSyncStore'
+import { createClient } from '@supabase/supabase-js'
 
 let supabase = null
 
 export function initSupabase(url, key) {
   try {
-    const { createClient } = window.__supabase || {}
-    if (createClient && url && key) {
+    if (url && key) {
       supabase = createClient(url, key)
       return true
     }
@@ -19,8 +19,6 @@ export function initSupabase(url, key) {
 export function getSupabase() { return supabase }
 
 // ─── Sync Engine ──────────────────────────────────────────────────
-const TABLES = ['animals', 'healthRecords', 'breedingRecords', 'milkRecords', 'feedInventory', 'feedTransactions', 'finances', 'staff']
-
 export async function addToSyncQueue(table, operation, recordId, data) {
   await db.syncQueue.add({
     table, operation, recordId,
@@ -29,6 +27,11 @@ export async function addToSyncQueue(table, operation, recordId, data) {
     createdAt: new Date().toISOString(),
   })
   useSyncStore.getState().incrementQueue()
+  
+  // Try sync immediately if online
+  if (navigator.onLine) {
+    processSyncQueue()
+  }
 }
 
 export async function processSyncQueue() {
@@ -47,13 +50,17 @@ export async function processSyncQueue() {
       const data = JSON.parse(item.data)
       try {
         if (item.operation === 'upsert') {
-          await supabase.from(item.table).upsert(data)
+          // Send to supabase
+          const { error } = await supabase.from(item.table).upsert(data)
+          if (error) throw error
         } else if (item.operation === 'delete') {
-          await supabase.from(item.table).delete().eq('id', item.recordId)
+          const { error } = await supabase.from(item.table).delete().eq('id', item.recordId)
+          if (error) throw error
         }
         await db.syncQueue.update(item.id, { status: 'synced' })
         store.decrementQueue()
       } catch (e) {
+        console.error('Sync Error for item', item, e)
         await db.syncQueue.update(item.id, { status: 'error', error: e.message })
       }
     }
@@ -84,12 +91,13 @@ export function initSyncEngine() {
   })
 
   // Auto-sync every 5 minutes when online
-  setInterval(() => {
+  const interval = setInterval(() => {
     if (navigator.onLine) processSyncQueue()
   }, 5 * 60 * 1000)
 
   return () => {
     window.removeEventListener('online', handleOnline)
     window.removeEventListener('offline', handleOffline)
+    clearInterval(interval)
   }
 }
