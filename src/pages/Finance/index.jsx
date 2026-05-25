@@ -106,6 +106,7 @@ export default function Finance() {
           </div>
         </form>
       </Modal>
+    </div>
     </PinGuard>
   )
 }

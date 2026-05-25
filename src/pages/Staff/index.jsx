@@ -138,6 +138,7 @@ export default function Staff() {
           </div>
         </form>
       </Modal>
+    </div>
     </PinGuard>
   )
 }
