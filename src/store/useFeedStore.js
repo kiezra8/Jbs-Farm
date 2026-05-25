@@ -8,7 +8,26 @@ export const useFeedStore = create((set, get) => ({
 
   loadAll: async () => {
     set({ loading: true })
-    const inventory = await db.feedInventory.toArray()
+    let inventory = await db.feedInventory.toArray()
+    
+    // Ensure requested feed types exist for existing users
+    const defaultFeeds = [
+      { feedType: 'Hay', unit: 'bales', currentStock: 0, minStock: 50, unitCost: 12000 },
+      { feedType: 'Silage', unit: 'kg', currentStock: 0, minStock: 1000, unitCost: 800 },
+      { feedType: 'Pasture', unit: 'acres', currentStock: 0, minStock: 30, unitCost: 20000 },
+    ]
+    
+    let needsReload = false
+    for (const df of defaultFeeds) {
+      if (!inventory.some(i => i.feedType === df.feedType)) {
+        await db.feedInventory.add({ ...df, updatedAt: new Date().toISOString() })
+        needsReload = true
+      }
+    }
+    if (needsReload) {
+      inventory = await db.feedInventory.toArray()
+    }
+
     const transactions = await db.feedTransactions.orderBy('date').reverse().toArray()
     set({ inventory, transactions, loading: false })
   },
