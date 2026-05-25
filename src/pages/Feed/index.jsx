@@ -4,7 +4,7 @@ import { useFeedStore } from '../../store/useFeedStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
-import { formatKES } from '../../utils/formatters'
+import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Feed() {
@@ -50,7 +50,7 @@ export default function Feed() {
       </div>
     )},
     { key: 'minStock', label: 'Min. Threshold', render: (val, row) => `${val} ${row.unit}` },
-    { key: 'unitCost', label: 'Unit Cost', render: (val) => formatKES(val) },
+    { key: 'unitCost', label: 'Unit Cost', render: (val) => formatUGX(val) },
   ]
 
   const transactionCols = [
@@ -58,7 +58,7 @@ export default function Feed() {
     { key: 'feedType', label: 'Feed Type' },
     { key: 'type', label: 'Transaction', render: (val) => <Badge variant={val === 'Purchase' ? 'green' : 'amber'}>{val}</Badge> },
     { key: 'quantity', label: 'Quantity', render: (val, row) => `${val} ${row.unit}` },
-    { key: 'totalCost', label: 'Total Cost', render: (val) => val > 0 ? formatKES(val) : '—' },
+    { key: 'totalCost', label: 'Total Cost', render: (val) => val > 0 ? formatUGX(val) : '—' },
   ]
 
   return (
@@ -76,10 +76,10 @@ export default function Feed() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-amber-500">
-          <div><p className="text-xs text-slate-400">Total Inventory Value</p><p className="text-2xl font-display font-bold text-white">{formatKES(stats.totalValue)}</p></div>
+          <div><p className="text-xs text-slate-400">Total Inventory Value</p><p className="text-2xl font-display font-bold text-white">{formatUGX(stats.totalValue)}</p></div>
         </div>
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-green-500">
-          <div><p className="text-xs text-slate-400">Monthly Purchases</p><p className="text-2xl font-display font-bold text-white">{formatKES(stats.monthPurchases)}</p></div>
+          <div><p className="text-xs text-slate-400">Monthly Purchases</p><p className="text-2xl font-display font-bold text-white">{formatUGX(stats.monthPurchases)}</p></div>
         </div>
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-red-500">
           <div><p className="text-xs text-slate-400">Low Stock Alerts</p><p className="text-2xl font-display font-bold text-white">{stats.lowStockCount}</p></div>
@@ -129,7 +129,7 @@ export default function Feed() {
               </select>
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Quantity Bought *</label><input required type="number" className="input-field" value={purchaseData.quantity} onChange={e => setPurchaseData({...purchaseData, quantity: e.target.value})} /></div>
-            <div><label className="block text-xs font-medium text-slate-400 mb-1">Total Cost (KES) *</label><input required type="number" className="input-field" value={purchaseData.totalCost} onChange={e => setPurchaseData({...purchaseData, totalCost: e.target.value})} /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Total Cost (Ushs) *</label><input required type="number" className="input-field" value={purchaseData.totalCost} onChange={e => setPurchaseData({...purchaseData, totalCost: e.target.value})} /></div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={purchaseData.date} onChange={e => setPurchaseData({...purchaseData, date: e.target.value})} /></div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Supplier</label><input type="text" className="input-field" value={purchaseData.supplier} onChange={e => setPurchaseData({...purchaseData, supplier: e.target.value})} /></div>
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Notes</label><input type="text" className="input-field" value={purchaseData.notes} onChange={e => setPurchaseData({...purchaseData, notes: e.target.value})} /></div>

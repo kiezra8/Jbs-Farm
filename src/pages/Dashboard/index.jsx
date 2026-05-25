@@ -12,7 +12,7 @@ import { useFinanceStore } from '../../store/useFinanceStore'
 import { useStaffStore } from '../../store/useStaffStore'
 import { useNotificationStore } from '../../store/useNotificationStore'
 import { generateInsights } from '../../services/analyticsEngine'
-import { formatKES } from '../../utils/formatters'
+import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
@@ -23,7 +23,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     <div className="glass-card px-3 py-2 text-xs">
       <p className="text-slate-400 mb-1">{label}</p>
       {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' && p.name?.includes('Ksh') ? formatKES(p.value) : p.value?.toFixed ? p.value.toFixed(1) : p.value}</p>
+        <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' && p.name?.includes('Ushs') ? formatUGX(p.value) : p.value?.toFixed ? p.value.toFixed(1) : p.value}</p>
       ))}
     </div>
   )
@@ -82,9 +82,9 @@ export default function Dashboard() {
 
       {/* KPI Row 2 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="Monthly Revenue" value={monthFinance.income} prefix="Ksh" icon={DollarSign} color="green"
+        <KPICard title="Monthly Revenue" value={monthFinance.income} prefix="Ushs" icon={DollarSign} color="green"
           trendLabel="This month" delay={0.2} />
-        <KPICard title="Monthly Expenses" value={monthFinance.expenses} prefix="Ksh" icon={TrendingUp} color="amber"
+        <KPICard title="Monthly Expenses" value={monthFinance.expenses} prefix="Ushs" icon={TrendingUp} color="amber"
           trendLabel="This month" delay={0.25} />
         <KPICard title="Staff Present" value={staffStats.present} icon={Users} color="blue"
           trendLabel={`of ${staffStats.total} staff today`} delay={0.3} />

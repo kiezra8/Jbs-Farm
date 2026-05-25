@@ -5,7 +5,7 @@ import { useAnimalStore } from '../../store/useAnimalStore'
 import DataTable from '../../components/ui/DataTable'
 import { HealthBadge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
-import { formatKES } from '../../utils/formatters'
+import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Health() {
@@ -44,7 +44,7 @@ export default function Health() {
     { key: 'details', label: 'Details', sortable: false, render: (_, row) => (
       <span className="text-slate-300">{row.type === 'Treatment' ? row.diagnosis : row.type === 'Vaccination' ? row.vaccine : row.notes || '—'}</span>
     )},
-    { key: 'cost', label: 'Cost', render: (val) => formatKES(val) },
+    { key: 'cost', label: 'Cost', render: (val) => formatUGX(val) },
     { key: 'status', label: 'Status', render: (val) => (
       <span className={`text-xs font-medium px-2 py-1 rounded-full ${val === 'Completed' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'}`}>{val || 'Completed'}</span>
     )},
@@ -100,7 +100,7 @@ export default function Health() {
               </select>
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>
-            <div><label className="block text-xs font-medium text-slate-400 mb-1">Cost (KES)</label><input type="number" className="input-field" value={formData.cost} onChange={e => setFormData({...formData, cost: e.target.value})} /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Cost (Ushs)</label><input type="number" className="input-field" value={formData.cost} onChange={e => setFormData({...formData, cost: e.target.value})} /></div>
             
             {formData.type === 'Treatment' && (
               <>
