@@ -87,7 +87,7 @@ export async function seedDatabase() {
     const date = daysAgo(rnd(10, 240))
     await db.breedingRecords.add({
       animalId: animalIds[rnd(0, 29)],
-      type: rnd(0, 1) ? 'AI' : 'Natural',
+      type: rnd(0, 1) ? 'Artificial' : 'Natural',
       date,
       bull: 'Titan (JBS-037)',
       status,
@@ -105,6 +105,7 @@ export async function seedDatabase() {
     { feedType: 'Dairy Meal', unit: 'kg', currentStock: rnd(800, 2000), minStock: 500, unitCost: 45 },
     { feedType: 'Hay', unit: 'bales', currentStock: rnd(80, 200), minStock: 50, unitCost: 120 },
     { feedType: 'Silage', unit: 'kg', currentStock: rnd(1500, 4000), minStock: 1000, unitCost: 8 },
+    { feedType: 'Pasture', unit: 'acres', currentStock: rnd(20, 80), minStock: 30, unitCost: 200 },
     { feedType: 'Mineral Lick', unit: 'kg', currentStock: rnd(20, 80), minStock: 30, unitCost: 200 },
     { feedType: 'Maize Germ', unit: 'kg', currentStock: rnd(200, 600), minStock: 200, unitCost: 25 },
     { feedType: 'Cottonseed Cake', unit: 'kg', currentStock: rnd(100, 400), minStock: 150, unitCost: 65 },

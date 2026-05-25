@@ -4,11 +4,12 @@ import { useFinanceStore } from '../../store/useFinanceStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
-import { formatKES } from '../../utils/formatters'
+import PinGuard from '../../components/ui/PinGuard'
+import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Finance() {
-  const { transactions, loadTransactions, getTotalStats, getMonthlyStats, addTransaction } = useFinanceStore()
+  const { transactions, loadTransactions, getTotalStats, getMonthlyStats, getDailyStats, addTransaction } = useFinanceStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   const [formData, setFormData] = useState({ date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', category: '', amount: '', description: '', reference: '' })
@@ -16,6 +17,7 @@ export default function Finance() {
   useEffect(() => { loadTransactions() }, [])
 
   const monthStats = getMonthlyStats()
+  const dailyStats = getDailyStats()
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -29,7 +31,7 @@ export default function Finance() {
     { key: 'category', label: 'Category', render: (val) => <span className="font-medium text-white">{val}</span> },
     { key: 'type', label: 'Type', render: (val) => <Badge variant={val === 'Income' ? 'green' : 'red'}>{val}</Badge> },
     { key: 'amount', label: 'Amount', render: (val, row) => (
-      <span className={row.type === 'Income' ? 'text-green-400' : 'text-red-400'}>{row.type === 'Income' ? '+' : '-'}{formatKES(val)}</span>
+      <span className={row.type === 'Income' ? 'text-green-400' : 'text-red-400'}>{row.type === 'Income' ? '+' : '-'}{formatUGX(val)}</span>
     )},
     { key: 'description', label: 'Description', render: (val) => val || '—' },
     { key: 'reference', label: 'Ref', render: (val) => val || '—' },
@@ -40,6 +42,7 @@ export default function Finance() {
     : ['Feed', 'Veterinary', 'Salaries', 'Equipment', 'Utilities', 'Transport', 'Maintenance', 'Other Expense']
 
   return (
+    <PinGuard>
     <div className="space-y-6">
       <div className="page-header">
         <div>
@@ -49,18 +52,22 @@ export default function Finance() {
         <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Transaction</button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="glass-card p-5 border-l-4 border-l-green-500">
+          <p className="text-sm text-slate-400 mb-1">Daily Revenue</p>
+          <p className="text-3xl font-display font-bold text-white">{formatUGX(dailyStats.income)}</p>
+        </div>
         <div className="glass-card p-5 border-l-4 border-l-green-500">
           <p className="text-sm text-slate-400 mb-1">Monthly Income</p>
-          <p className="text-3xl font-display font-bold text-white">{formatKES(monthStats.income)}</p>
+          <p className="text-3xl font-display font-bold text-white">{formatUGX(monthStats.income)}</p>
         </div>
         <div className="glass-card p-5 border-l-4 border-l-red-500">
           <p className="text-sm text-slate-400 mb-1">Monthly Expenses</p>
-          <p className="text-3xl font-display font-bold text-white">{formatKES(monthStats.expenses)}</p>
+          <p className="text-3xl font-display font-bold text-white">{formatUGX(monthStats.expenses)}</p>
         </div>
         <div className="glass-card p-5 border-l-4 border-l-blue-500">
           <p className="text-sm text-slate-400 mb-1">Net Profit (Month)</p>
-          <p className={`text-3xl font-display font-bold ${monthStats.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatKES(monthStats.profit)}</p>
+          <p className={`text-3xl font-display font-bold ${monthStats.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatUGX(monthStats.profit)}</p>
         </div>
       </div>
 
@@ -89,7 +96,7 @@ export default function Finance() {
                 {categories.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
-            <div><label className="block text-xs font-medium text-slate-400 mb-1">Amount (KES) *</label><input required type="number" className="input-field" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Amount (Ushs) *</label><input required type="number" className="input-field" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} /></div>
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Description *</label><input required type="text" className="input-field" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="e.g. Bought 10 bags of Dairy Meal" /></div>
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Reference / Receipt Number</label><input type="text" className="input-field" value={formData.reference} onChange={e => setFormData({...formData, reference: e.target.value})} /></div>
           </div>
@@ -99,6 +106,6 @@ export default function Finance() {
           </div>
         </form>
       </Modal>
-    </div>
+    </PinGuard>
   )
 }

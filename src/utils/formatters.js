@@ -1,7 +1,7 @@
-// Format currency in KES
-export const formatKES = (amount) => {
-  if (amount === null || amount === undefined) return 'Ksh 0'
-  return `Ksh ${Number(amount).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+// Format currency in UGX
+export const formatUGX = (amount) => {
+  if (amount === null || amount === undefined) return 'Ushs 0'
+  return `Ushs ${Number(amount).toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 
 // Format liters

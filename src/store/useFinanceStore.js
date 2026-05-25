@@ -41,6 +41,24 @@ export const useFinanceStore = create((set, get) => ({
     return { income, expenses, profit: income - expenses }
   },
 
+  getYearlyStats: (date = new Date()) => {
+    const { transactions } = get()
+    const yearPrefix = format(date, 'yyyy')
+    const yearly = transactions.filter(t => t.date.startsWith(yearPrefix))
+    const income = yearly.filter(t => t.type === 'Income').reduce((sum, t) => sum + (t.amount || 0), 0)
+    const expenses = yearly.filter(t => t.type === 'Expense').reduce((sum, t) => sum + (t.amount || 0), 0)
+    return { income, expenses, profit: income - expenses }
+  },
+
+  getDailyStats: (date = new Date()) => {
+    const { transactions } = get()
+    const todayStr = format(date, 'yyyy-MM-dd')
+    const daily = transactions.filter(t => t.date === todayStr)
+    const income = daily.filter(t => t.type === 'Income').reduce((sum, t) => sum + (t.amount || 0), 0)
+    const expenses = daily.filter(t => t.type === 'Expense').reduce((sum, t) => sum + (t.amount || 0), 0)
+    return { income, expenses, profit: income - expenses }
+  },
+
   getCategoryBreakdown: () => {
     const { transactions } = get()
     const expenses = transactions.filter(t => t.type === 'Expense')

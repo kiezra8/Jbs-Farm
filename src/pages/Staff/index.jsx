@@ -4,11 +4,12 @@ import { useStaffStore } from '../../store/useStaffStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
-import { formatKES } from '../../utils/formatters'
+import PinGuard from '../../components/ui/PinGuard'
+import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Staff() {
-  const { staff, tasks, loadAll, getStats, addStaff, addTask } = useStaffStore()
+  const { staff, tasks, loadAll, getStats, addStaff, addTask, markAttendance } = useStaffStore()
   const [isStaffOpen, setIsStaffOpen] = useState(false)
   const [isTaskOpen, setIsTaskOpen] = useState(false)
 
@@ -41,8 +42,14 @@ export default function Staff() {
       </div>
     )},
     { key: 'role', label: 'Role' },
-    { key: 'salary', label: 'Salary', render: (val) => formatKES(val) },
+    { key: 'salary', label: 'Salary', render: (val) => formatUGX(val) },
     { key: 'status', label: 'Status', render: (val) => <Badge variant={val === 'Active' ? 'green' : 'gray'}>{val}</Badge> },
+    { key: 'actions', label: 'Attendance (Today)', render: (_, row) => (
+      <div className="flex gap-2">
+        <button onClick={() => markAttendance({ staffId: row.id, date: format(new Date(), 'yyyy-MM-dd'), status: 'Present' })} className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30">Present</button>
+        <button onClick={() => markAttendance({ staffId: row.id, date: format(new Date(), 'yyyy-MM-dd'), status: 'Absent' })} className="text-xs px-2 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30">Absent</button>
+      </div>
+    )}
   ]
 
   const taskCols = [
@@ -54,6 +61,7 @@ export default function Staff() {
   ]
 
   return (
+    <PinGuard>
     <div className="space-y-6">
       <div className="page-header">
         <div>
@@ -95,7 +103,7 @@ export default function Staff() {
               </select>
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Phone Number</label><input type="text" className="input-field" value={staffData.phone} onChange={e => setStaffData({...staffData, phone: e.target.value})} /></div>
-            <div><label className="block text-xs font-medium text-slate-400 mb-1">Monthly Salary (KES) *</label><input required type="number" className="input-field" value={staffData.salary} onChange={e => setStaffData({...staffData, salary: e.target.value})} /></div>
+            <div><label className="block text-xs font-medium text-slate-400 mb-1">Monthly Salary (Ushs) *</label><input required type="number" className="input-field" value={staffData.salary} onChange={e => setStaffData({...staffData, salary: e.target.value})} /></div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Join Date *</label><input required type="date" className="input-field" value={staffData.joinDate} onChange={e => setStaffData({...staffData, joinDate: e.target.value})} /></div>
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
@@ -130,6 +138,6 @@ export default function Staff() {
           </div>
         </form>
       </Modal>
-    </div>
+    </PinGuard>
   )
 }

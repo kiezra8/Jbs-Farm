@@ -3,6 +3,7 @@ import { Save, Database, Key, Cloud, Shield, Download, Upload } from 'lucide-rea
 import { db } from '../../db/schema'
 import { initSupabase } from '../../services/syncEngine'
 import { seedDatabase } from '../../db/seedData'
+import PinGuard from '../../components/ui/PinGuard'
 
 export default function Settings() {
   const [supabaseUrl, setSupabaseUrl] = useState('')
@@ -32,6 +33,7 @@ export default function Settings() {
   }
 
   return (
+    <PinGuard>
     <div className="space-y-6 max-w-4xl">
       <div className="page-header">
         <div>
@@ -130,5 +132,6 @@ export default function Settings() {
         </div>
       </div>
     </div>
+    </PinGuard>
   )
 }

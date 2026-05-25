@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { useMilkStore } from '../../store/useMilkStore'
 import { useFinanceStore } from '../../store/useFinanceStore'
-import { formatKES } from '../../utils/formatters'
+import { formatUGX } from '../../utils/formatters'
+import PinGuard from '../../components/ui/PinGuard'
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -10,7 +11,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     <div className="glass-card px-3 py-2 text-xs">
       <p className="text-slate-400 mb-1">{label}</p>
       {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' && p.name?.includes('Income') ? formatKES(p.value) : p.value}</p>
+        <p key={i} style={{ color: p.color }}>{p.name}: {typeof p.value === 'number' && p.name?.includes('Income') ? formatUGX(p.value) : p.value}</p>
       ))}
     </div>
   )
@@ -18,7 +19,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Analytics() {
   const { loadRecords: loadMilk, getDailyTotals } = useMilkStore()
-  const { loadTransactions, getMonthlyTrend } = useFinanceStore()
+  const { loadTransactions, getMonthlyTrend, getDailyStats, getMonthlyStats, getYearlyStats } = useFinanceStore()
   
   const [milkData, setMilkData] = useState([])
   const [financeData, setFinanceData] = useState([])
@@ -30,12 +31,32 @@ export default function Analytics() {
     })
   }, [])
 
+  const dailyFinance = getDailyStats()
+  const monthlyFinance = getMonthlyStats()
+  const yearlyFinance = getYearlyStats()
+
   return (
+    <PinGuard>
     <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">Analytics & Intelligence</h1>
           <p className="text-slate-400 text-sm mt-1">Enterprise business intelligence dashboards.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="glass-card p-4">
+          <p className="text-xs text-slate-400 mb-1">Daily Revenue</p>
+          <p className="text-2xl font-display font-bold text-white">{formatUGX(dailyFinance.income)}</p>
+        </div>
+        <div className="glass-card p-4">
+          <p className="text-xs text-slate-400 mb-1">Monthly Revenue</p>
+          <p className="text-2xl font-display font-bold text-white">{formatUGX(monthlyFinance.income)}</p>
+        </div>
+        <div className="glass-card p-4">
+          <p className="text-xs text-slate-400 mb-1">Yearly Revenue</p>
+          <p className="text-2xl font-display font-bold text-white">{formatUGX(yearlyFinance.income)}</p>
         </div>
       </div>
 
@@ -70,5 +91,6 @@ export default function Analytics() {
         </div>
       </div>
     </div>
+    </PinGuard>
   )
 }

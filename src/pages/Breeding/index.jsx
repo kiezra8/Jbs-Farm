@@ -12,7 +12,7 @@ export default function Breeding() {
   const { animals, loadAnimals } = useAnimalStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const [formData, setFormData] = useState({ animalId: '', type: 'AI', date: format(new Date(), 'yyyy-MM-dd'), bull: '', status: 'Pending Check', expectedCalving: '', notes: '' })
+  const [formData, setFormData] = useState({ animalId: '', type: 'Artificial', date: format(new Date(), 'yyyy-MM-dd'), bull: '', status: 'Pending Check', expectedCalving: '', notes: '' })
 
   useEffect(() => { loadRecords(); loadAnimals() }, [])
 
@@ -26,7 +26,7 @@ export default function Breeding() {
     e.preventDefault()
     await addRecord({ ...formData, animalId: Number(formData.animalId) })
     setIsModalOpen(false)
-    setFormData({ animalId: '', type: 'AI', date: format(new Date(), 'yyyy-MM-dd'), bull: '', status: 'Pending Check', expectedCalving: '', notes: '' })
+    setFormData({ animalId: '', type: 'Artificial', date: format(new Date(), 'yyyy-MM-dd'), bull: '', status: 'Pending Check', expectedCalving: '', notes: '' })
   }
 
   const columns = [
@@ -34,7 +34,7 @@ export default function Breeding() {
     { key: 'tagNumber', label: 'Cow', render: (val, row) => (
       <div><p className="font-medium text-white">{val}</p><p className="text-xs text-slate-400">{row.animalName}</p></div>
     )},
-    { key: 'type', label: 'Method', render: (val) => <Badge variant={val === 'AI' ? 'blue' : 'gray'}>{val}</Badge> },
+    { key: 'type', label: 'Method', render: (val) => <Badge variant={val === 'Artificial' ? 'blue' : 'gray'}>{val}</Badge> },
     { key: 'bull', label: 'Bull / Sire' },
     { key: 'status', label: 'Status', render: (val) => {
       let v = 'gray'; if (val === 'Confirmed Pregnant') v = 'purple'; if (val === 'Calved') v = 'green'; if (val === 'Open') v = 'red';
@@ -48,7 +48,7 @@ export default function Breeding() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Breeding Management</h1>
-          <p className="text-slate-400 text-sm mt-1">Track AI, natural mating, pregnancies, and calving.</p>
+          <p className="text-slate-400 text-sm mt-1">Track Artificial, natural mating, pregnancies, and calving.</p>
         </div>
         <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Record</button>
       </div>
@@ -58,7 +58,7 @@ export default function Breeding() {
           <div><p className="text-xs text-slate-400">Pregnant Cows</p><p className="text-2xl font-display font-bold text-white">{stats.pregnant}</p></div><span className="text-2xl opacity-80">🤰</span>
         </div>
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-blue-500">
-          <div><p className="text-xs text-slate-400">AI Services</p><p className="text-2xl font-display font-bold text-white">{stats.ai}</p></div><span className="text-2xl opacity-80">🧬</span>
+          <div><p className="text-xs text-slate-400">Artificial Services</p><p className="text-2xl font-display font-bold text-white">{stats.ai}</p></div><span className="text-2xl opacity-80">🧬</span>
         </div>
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-green-500">
           <div><p className="text-xs text-slate-400">Calved</p><p className="text-2xl font-display font-bold text-white">{stats.calved}</p></div><span className="text-2xl opacity-80">🐄</span>
@@ -85,7 +85,7 @@ export default function Breeding() {
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Method *</label>
               <select required className="input-field" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-                <option>AI</option><option>Natural</option><option>Heat Cycle</option>
+                <option>Artificial</option><option>Natural</option><option>Heat Cycle</option>
               </select>
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>
