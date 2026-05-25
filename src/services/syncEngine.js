@@ -72,8 +72,43 @@ export async function processSyncQueue() {
   }
 }
 
+let hooksInitialized = false
+
+export function setupDexieHooks() {
+  if (hooksInitialized) return
+  hooksInitialized = true
+
+  const tables = [
+    'animals', 'healthRecords', 'breedingRecords', 'milkRecords',
+    'feedInventory', 'feedTransactions', 'finances', 'staff',
+    'attendance', 'tasks', 'notifications'
+  ]
+
+  tables.forEach(table => {
+    db[table].hook('creating', function (primKey, obj, trans) {
+      this.onsuccess = function (generatedKey) {
+        return addToSyncQueue(table, 'upsert', generatedKey, { ...obj, id: generatedKey })
+      }
+    })
+
+    db[table].hook('updating', function (mods, primKey, obj, trans) {
+      this.onsuccess = function (updatedObj) {
+        return addToSyncQueue(table, 'upsert', primKey, updatedObj)
+      }
+    })
+
+    db[table].hook('deleting', function (primKey, obj, trans) {
+      this.onsuccess = function () {
+        return addToSyncQueue(table, 'delete', primKey, null)
+      }
+    })
+  })
+}
+
 export function initSyncEngine() {
   const store = useSyncStore.getState()
+  
+  setupDexieHooks()
 
   const handleOnline = () => {
     store.setOnline(true)
