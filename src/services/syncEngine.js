@@ -104,7 +104,7 @@ export async function processSyncQueue() {
   if (!store.isOnline || store.isSyncing) return
 
   const pending = await db.syncQueue
-    .where('status').equals('pending')
+    .where('status').anyOf('pending', 'error')
     .toArray()
 
   if (pending.length === 0) return
@@ -203,7 +203,7 @@ export function initSyncEngine() {
 
   // Count any existing pending items from previous sessions
   db.syncQueue
-    .where('status').equals('pending')
+    .where('status').anyOf('pending', 'error')
     .count()
     .then(n => store.setQueueCount(n))
 
