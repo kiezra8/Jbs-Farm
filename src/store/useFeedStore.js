@@ -48,7 +48,8 @@ export const useFeedStore = create((set, get) => ({
 
   addTransaction: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.feedTransactions.add({ ...data, createdAt: now })
+    const id = crypto.randomUUID()
+    await db.feedTransactions.add({ ...data, id, createdAt: now })
     const tx = await db.feedTransactions.get(id)
     set(s => ({ transactions: [tx, ...s.transactions] }))
     // update inventory stock

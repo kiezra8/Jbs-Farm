@@ -14,7 +14,8 @@ export const useFinanceStore = create((set, get) => ({
 
   addTransaction: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.finances.add({ ...data, createdAt: now })
+    const id = crypto.randomUUID()
+    await db.finances.add({ ...data, id, createdAt: now })
     const tx = await db.finances.get(id)
     set(s => ({ transactions: [tx, ...s.transactions] }))
     return tx

@@ -16,7 +16,8 @@ export const useAnimalStore = create((set, get) => ({
 
   addAnimal: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.animals.add({ ...data, createdAt: now, updatedAt: now })
+    const id = crypto.randomUUID()
+    await db.animals.add({ ...data, id, createdAt: now, updatedAt: now })
     const animal = await db.animals.get(id)
     set(s => ({ animals: [...s.animals, animal] }))
     return animal

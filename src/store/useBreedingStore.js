@@ -13,7 +13,8 @@ export const useBreedingStore = create((set, get) => ({
 
   addRecord: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.breedingRecords.add({ ...data, createdAt: now, updatedAt: now })
+    const id = crypto.randomUUID()
+    await db.breedingRecords.add({ ...data, id, createdAt: now, updatedAt: now })
     const record = await db.breedingRecords.get(id)
     set(s => ({ records: [record, ...s.records] }))
     return record

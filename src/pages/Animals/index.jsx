@@ -30,20 +30,25 @@ export default function Animals() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    const payload = {
-      ...formData,
-      weight: Number(formData.weight) || 0,
-      age: Number(formData.age) || 0,
-      purchasePrice: Number(formData.purchasePrice) || 0
+    try {
+      const payload = {
+        ...formData,
+        weight: Number(formData.weight) || 0,
+        age: Number(formData.age) || 0,
+        purchasePrice: Number(formData.purchasePrice) || 0
+      }
+      if (editingAnimal) {
+        await updateAnimal(editingAnimal.id, payload)
+      } else {
+        await addAnimal(payload)
+      }
+      setIsModalOpen(false)
+      setEditingAnimal(null)
+      setFormData(initialForm)
+    } catch (err) {
+      console.error('Save failed:', err)
+      alert(`Failed to save: ${err.message}`)
     }
-    if (editingAnimal) {
-      await updateAnimal(editingAnimal.id, payload)
-    } else {
-      await addAnimal(payload)
-    }
-    setIsModalOpen(false)
-    setEditingAnimal(null)
-    setFormData(initialForm)
   }
 
   const columns = [

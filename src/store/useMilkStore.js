@@ -14,7 +14,8 @@ export const useMilkStore = create((set, get) => ({
 
   addRecord: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.milkRecords.add({ ...data, createdAt: now })
+    const id = crypto.randomUUID()
+    await db.milkRecords.add({ ...data, id, createdAt: now })
     const record = await db.milkRecords.get(id)
     set(s => ({ records: [record, ...s.records] }))
     return record

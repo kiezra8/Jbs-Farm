@@ -17,7 +17,8 @@ export const useStaffStore = create((set, get) => ({
 
   addStaff: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.staff.add({ ...data, createdAt: now })
+    const id = crypto.randomUUID()
+    await db.staff.add({ ...data, id, createdAt: now })
     const member = await db.staff.get(id)
     set(s => ({ staff: [...s.staff, member] }))
     return member
@@ -35,7 +36,8 @@ export const useStaffStore = create((set, get) => ({
   },
 
   markAttendance: async (data) => {
-    const id = await db.attendance.add({ ...data, createdAt: new Date().toISOString() })
+    const id = crypto.randomUUID()
+    await db.attendance.add({ ...data, id, createdAt: new Date().toISOString() })
     const record = await db.attendance.get(id)
     set(s => ({ attendance: [record, ...s.attendance] }))
     return record
@@ -43,7 +45,8 @@ export const useStaffStore = create((set, get) => ({
 
   addTask: async (data) => {
     const now = new Date().toISOString()
-    const id = await db.tasks.add({ ...data, status: 'Pending', createdAt: now })
+    const id = crypto.randomUUID()
+    await db.tasks.add({ ...data, id, status: 'Pending', createdAt: now })
     const task = await db.tasks.get(id)
     set(s => ({ tasks: [task, ...s.tasks] }))
     return task
