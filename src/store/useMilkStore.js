@@ -20,6 +20,12 @@ export const useMilkStore = create((set, get) => ({
     return record
   },
 
+  updateRecord: async (id, data) => {
+    await db.milkRecords.update(id, data)
+    const record = await db.milkRecords.get(id)
+    set(s => ({ records: s.records.map(r => r.id === id ? record : r) }))
+  },
+
   deleteRecord: async (id) => {
     await db.milkRecords.delete(id)
     set(s => ({ records: s.records.filter(r => r.id !== id) }))

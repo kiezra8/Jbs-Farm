@@ -2,9 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from './store/useAuthStore'
 import { useUIStore } from './store/useUIStore'
-import { initSyncEngine } from './services/syncEngine'
-import { db } from './db/schema'
-import { initSupabase } from './services/syncEngine'
+import { initSyncEngine, initSupabase, fetchAllFromSupabase } from './services/syncEngine'
 
 import AppLayout from './components/layout/AppLayout'
 
@@ -39,26 +37,22 @@ function App() {
 
   useEffect(() => {
     initTheme()
-    
-    // Initialize Supabase from env variables
-    const envUrl = import.meta.env.VITE_SUPABASE_URL
-    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-    if (envUrl && envKey) {
-      initSupabase(envUrl, envKey)
-    } else {
-      // Fallback to settings DB
-      db.settings.get('supabaseUrl').then(urlRow => {
-        db.settings.get('supabaseKey').then(keyRow => {
-          if (urlRow?.value && keyRow?.value) {
-            initSupabase(urlRow.value, keyRow.value)
-          }
-        })
-      })
+
+    // Supabase credentials come from Cloudflare env vars (set in Pages dashboard)
+    // They are NEVER stored in source code or the settings page
+    const url = import.meta.env.VITE_SUPABASE_URL
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+    if (url && key) {
+      const ok = initSupabase(url, key)
+      if (ok && navigator.onLine) {
+        // Pull latest cloud data so all users see the same records
+        fetchAllFromSupabase()
+      }
     }
 
-    // Start offline sync engine listener
+    // Start the offline sync engine (queues writes, flushes on reconnect)
     const cleanupSync = initSyncEngine()
-    
     return () => cleanupSync()
   }, [])
 

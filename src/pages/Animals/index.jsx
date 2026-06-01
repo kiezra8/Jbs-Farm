@@ -9,16 +9,19 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { QRCodeSVG } from 'qrcode.react'
 
 export default function Animals() {
-  const { loadAnimals, getFilteredAnimals, getStats, setSearchQuery, searchQuery, filters, setFilter, deleteAnimal, addAnimal } = useAnimalStore()
+  const { loadAnimals, getFilteredAnimals, getStats, setSearchQuery, searchQuery, filters, setFilter, deleteAnimal, addAnimal, updateAnimal } = useAnimalStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isQRModalOpen, setIsQRModalOpen] = useState(false)
   const [selectedAnimal, setSelectedAnimal] = useState(null)
+  const [editingAnimal, setEditingAnimal] = useState(null)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
 
-  // Form State
-  const [formData, setFormData] = useState({
+  const initialForm = {
     tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: 'Healthy', weight: '', age: '', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: ''
-  })
+  }
+
+  // Form State
+  const [formData, setFormData] = useState(initialForm)
 
   useEffect(() => { loadAnimals() }, [])
 
@@ -27,14 +30,20 @@ export default function Animals() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    await addAnimal({
+    const payload = {
       ...formData,
       weight: Number(formData.weight) || 0,
       age: Number(formData.age) || 0,
       purchasePrice: Number(formData.purchasePrice) || 0
-    })
+    }
+    if (editingAnimal) {
+      await updateAnimal(editingAnimal.id, payload)
+    } else {
+      await addAnimal(payload)
+    }
     setIsModalOpen(false)
-    setFormData({ tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: 'Healthy', weight: '', age: '', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: '' })
+    setEditingAnimal(null)
+    setFormData(initialForm)
   }
 
   const columns = [
@@ -59,7 +68,24 @@ export default function Animals() {
         <button onClick={() => { setSelectedAnimal(row); setIsQRModalOpen(true) }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="QR Code">
           <QrCode size={16} />
         </button>
-        <button className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
+        <button onClick={() => {
+          setEditingAnimal(row)
+          setFormData({
+            tagNumber: row.tagNumber,
+            name: row.name || '',
+            breed: row.breed,
+            gender: row.gender,
+            status: row.status,
+            weight: row.weight || '',
+            age: row.age || '',
+            dob: row.dob || '',
+            purchaseDate: row.purchaseDate || '',
+            purchasePrice: row.purchasePrice || '',
+            color: row.color || '',
+            notes: row.notes || ''
+          })
+          setIsModalOpen(true)
+        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
           <Edit2 size={16} />
         </button>
         <button onClick={() => { setSelectedAnimal(row); setIsDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
@@ -130,7 +156,7 @@ export default function Animals() {
         <DataTable columns={columns} data={filteredData} pageSize={15} />
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Animal">
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingAnimal(null); setFormData(initialForm) }} title={editingAnimal ? "Edit Animal Record" : "Add New Animal"}>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Tag Number *</label><input required type="text" className="input-field" value={formData.tagNumber} onChange={e => setFormData({...formData, tagNumber: e.target.value})} placeholder="e.g. JBS-001" /></div>
@@ -157,7 +183,7 @@ export default function Animals() {
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Color</label><input type="text" className="input-field" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} /></div>
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-            <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setEditingAnimal(null); setFormData(initialForm) }}>Cancel</button>
             <button type="submit" className="btn-primary">Save Animal</button>
           </div>
         </form>

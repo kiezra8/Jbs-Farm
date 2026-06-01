@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Edit2 } from 'lucide-react'
 import { useFeedStore } from '../../store/useFeedStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
@@ -8,12 +8,16 @@ import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Feed() {
-  const { inventory, transactions, loadAll, getStats, addTransaction } = useFeedStore()
+  const { inventory, transactions, loadAll, getStats, addTransaction, updateInventory } = useFeedStore()
   const [isLogOpen, setIsLogOpen] = useState(false)
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false)
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
+  
+  const [editingInventoryItem, setEditingInventoryItem] = useState(null)
 
   const [logData, setLogData] = useState({ feedType: '', quantity: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
   const [purchaseData, setPurchaseData] = useState({ feedType: '', quantity: '', totalCost: '', supplier: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
+  const [inventoryData, setInventoryData] = useState({ feedType: '', currentStock: '', minStock: '', unitCost: '' })
 
   useEffect(() => { loadAll() }, [])
 
@@ -37,6 +41,18 @@ export default function Feed() {
     setPurchaseData({ feedType: '', quantity: '', totalCost: '', supplier: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
   }
 
+  const handleInventorySave = async (e) => {
+    e.preventDefault()
+    if (!editingInventoryItem) return
+    await updateInventory(editingInventoryItem.id, {
+      currentStock: Number(inventoryData.currentStock) || 0,
+      minStock: Number(inventoryData.minStock) || 0,
+      unitCost: Number(inventoryData.unitCost) || 0
+    })
+    setIsInventoryModalOpen(false)
+    setEditingInventoryItem(null)
+  }
+
   const inventoryCols = [
     { key: 'feedType', label: 'Feed Type', render: (val) => <span className="font-medium text-white">{val}</span> },
     { key: 'currentStock', label: 'Current Stock', render: (val, row) => (
@@ -51,6 +67,20 @@ export default function Feed() {
     )},
     { key: 'minStock', label: 'Min. Threshold', render: (val, row) => `${val} ${row.unit}` },
     { key: 'unitCost', label: 'Unit Cost', render: (val) => formatUGX(val) },
+    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      <button onClick={() => {
+        setEditingInventoryItem(row)
+        setInventoryData({
+          feedType: row.feedType,
+          currentStock: String(row.currentStock),
+          minStock: String(row.minStock),
+          unitCost: String(row.unitCost)
+        })
+        setIsInventoryModalOpen(true)
+      }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit Inventory Settings">
+        <Edit2 size={16} />
+      </button>
+    )}
   ]
 
   const transactionCols = [
@@ -137,6 +167,33 @@ export default function Feed() {
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
             <button type="button" className="btn-secondary" onClick={() => setIsPurchaseOpen(false)}>Cancel</button>
             <button type="submit" className="btn-primary">Save Purchase</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={isInventoryModalOpen} onClose={() => { setIsInventoryModalOpen(false); setEditingInventoryItem(null) }} title="Edit Feed Item">
+        <form onSubmit={handleInventorySave} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Feed Type</label>
+              <input disabled type="text" className="input-field opacity-60 text-slate-400" value={inventoryData.feedType} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Current Stock ({editingInventoryItem?.unit}) *</label>
+              <input required type="number" className="input-field" value={inventoryData.currentStock} onChange={e => setInventoryData({...inventoryData, currentStock: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Min. Threshold ({editingInventoryItem?.unit}) *</label>
+              <input required type="number" className="input-field" value={inventoryData.minStock} onChange={e => setInventoryData({...inventoryData, minStock: e.target.value})} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Unit Cost (Ushs per {editingInventoryItem?.unit}) *</label>
+              <input required type="number" className="input-field" value={inventoryData.unitCost} onChange={e => setInventoryData({...inventoryData, unitCost: e.target.value})} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <button type="button" className="btn-secondary" onClick={() => { setIsInventoryModalOpen(false); setEditingInventoryItem(null) }}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Changes</button>
           </div>
         </form>
       </Modal>

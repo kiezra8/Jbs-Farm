@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Edit2, Trash2 } from 'lucide-react'
 import { useFinanceStore } from '../../store/useFinanceStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import PinGuard from '../../components/ui/PinGuard'
 import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Finance() {
-  const { transactions, loadTransactions, getTotalStats, getMonthlyStats, getDailyStats, addTransaction } = useFinanceStore()
+  const { transactions, loadTransactions, getMonthlyStats, getDailyStats, addTransaction, updateTransaction, deleteTransaction } = useFinanceStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingTransaction, setEditingTransaction] = useState(null)
+  const [selectedTransaction, setSelectedTransaction] = useState(null)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
 
-  const [formData, setFormData] = useState({ date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', category: '', amount: '', description: '', reference: '' })
+  const initialForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', category: '', amount: '', description: '', reference: '' }
+  const [formData, setFormData] = useState(initialForm)
 
   useEffect(() => { loadTransactions() }, [])
 
@@ -21,9 +26,15 @@ export default function Finance() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    await addTransaction({ ...formData, amount: Number(formData.amount) || 0 })
+    const payload = { ...formData, amount: Number(formData.amount) || 0 }
+    if (editingTransaction) {
+      await updateTransaction(editingTransaction.id, payload)
+    } else {
+      await addTransaction(payload)
+    }
     setIsModalOpen(false)
-    setFormData({ date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', category: '', amount: '', description: '', reference: '' })
+    setEditingTransaction(null)
+    setFormData(initialForm)
   }
 
   const columns = [
@@ -35,6 +46,27 @@ export default function Finance() {
     )},
     { key: 'description', label: 'Description', render: (val) => val || '—' },
     { key: 'reference', label: 'Ref', render: (val) => val || '—' },
+    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+        <button onClick={() => {
+          setEditingTransaction(row)
+          setFormData({
+            date: row.date,
+            type: row.type,
+            category: row.category,
+            amount: String(row.amount),
+            description: row.description,
+            reference: row.reference || ''
+          })
+          setIsModalOpen(true)
+        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
+          <Edit2 size={16} />
+        </button>
+        <button onClick={() => { setSelectedTransaction(row); setIsDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
+          <Trash2 size={16} />
+        </button>
+      </div>
+    )}
   ]
 
   const categories = formData.type === 'Income' 
@@ -74,12 +106,11 @@ export default function Finance() {
       <div className="glass-card p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display font-semibold text-white">Transaction Ledger</h3>
-          <button className="btn-secondary text-xs py-1.5 px-3">Export to Excel</button>
         </div>
         <DataTable columns={columns} data={transactions} pageSize={12} />
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Financial Transaction">
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTransaction(null); setFormData(initialForm) }} title={editingTransaction ? "Edit Transaction" : "Add Financial Transaction"}>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -101,11 +132,13 @@ export default function Finance() {
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Reference / Receipt Number</label><input type="text" className="input-field" value={formData.reference} onChange={e => setFormData({...formData, reference: e.target.value})} /></div>
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-            <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setEditingTransaction(null); setFormData(initialForm) }}>Cancel</button>
             <button type="submit" className="btn-primary">Save Transaction</button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={isDeleteOpen} onClose={() => setIsDeleteOpen(false)} onConfirm={() => { if(selectedTransaction) deleteTransaction(selectedTransaction.id) }} title="Delete Transaction?" message={`Are you sure you want to permanently delete this financial transaction?`} />
     </div>
     </PinGuard>
   )

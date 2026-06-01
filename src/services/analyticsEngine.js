@@ -94,7 +94,7 @@ export async function getMilkLeaderboard(animals, milkRecords) {
   })
   return Object.entries(perCow)
     .map(([id, total]) => {
-      const animal = animals.find(a => a.id === Number(id))
+      const animal = animals.find(a => String(a.id) === String(id))
       return { animal, total }
     })
     .filter(e => e.animal)

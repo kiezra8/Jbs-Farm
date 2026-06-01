@@ -1,34 +1,47 @@
-import { useState, useEffect } from 'react'
-import { Save, Database, Key, Cloud, Shield, Download, Upload } from 'lucide-react'
+import { useState } from 'react'
+import { Save, Database, Shield, Download, Upload, CheckCircle, Cloud } from 'lucide-react'
 import { db } from '../../db/schema'
-import { initSupabase } from '../../services/syncEngine'
 import { seedDatabase } from '../../db/seedData'
+import { fetchAllFromSupabase, processSyncQueue } from '../../services/syncEngine'
+import { useSyncStore } from '../../store/useSyncStore'
 import PinGuard from '../../components/ui/PinGuard'
 
 export default function Settings() {
-  const [supabaseUrl, setSupabaseUrl] = useState('')
-  const [supabaseKey, setSupabaseKey] = useState('')
-  const [isSaved, setIsSaved] = useState(false)
   const [seeding, setSeeding] = useState(false)
-
-  useEffect(() => {
-    db.settings.get('supabaseUrl').then(v => { if(v) setSupabaseUrl(v.value) })
-    db.settings.get('supabaseKey').then(v => { if(v) setSupabaseKey(v.value) })
-  }, [])
-
-  const handleSaveAuth = async (e) => {
-    e.preventDefault()
-    await db.settings.put({ key: 'supabaseUrl', value: supabaseUrl })
-    await db.settings.put({ key: 'supabaseKey', value: supabaseKey })
-    initSupabase(supabaseUrl, supabaseKey)
-    setIsSaved(true)
-    setTimeout(() => setIsSaved(false), 3000)
-  }
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
+  const { lastSynced, queueCount } = useSyncStore()
 
   const handleSeed = async () => {
     setSeeding(true)
     await seedDatabase()
     setSeeding(false)
+    window.location.reload()
+  }
+
+  const handleManualSync = async () => {
+    setSyncing(true)
+    setSyncMsg('')
+    try {
+      await processSyncQueue()
+      await fetchAllFromSupabase()
+      setSyncMsg('Sync complete!')
+    } catch (e) {
+      setSyncMsg('Sync failed: ' + e.message)
+    } finally {
+      setSyncing(false)
+      setTimeout(() => setSyncMsg(''), 4000)
+    }
+  }
+
+  const handleClearData = async () => {
+    if (!window.confirm('This will delete ALL local data. Are you sure?')) return
+    const tables = [
+      'animals','healthRecords','breedingRecords','milkRecords',
+      'feedInventory','feedTransactions','finances','staff',
+      'attendance','tasks','notifications','syncQueue','settings',
+    ]
+    for (const t of tables) await db[t].clear()
     window.location.reload()
   }
 
@@ -38,37 +51,58 @@ export default function Settings() {
       <div className="page-header">
         <div>
           <h1 className="page-title">System Settings</h1>
-          <p className="text-slate-400 text-sm mt-1">Configure cloud sync, security, and farm details.</p>
+          <p className="text-slate-400 text-sm mt-1">Manage cloud sync, database, and farm security.</p>
         </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Cloud Sync Setup */}
+
+        {/* Cloud Sync Status */}
         <div className="glass-card p-6">
           <div className="flex items-center gap-3 mb-6 border-b pb-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
             <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center border border-green-500/20">
               <Cloud className="text-green-400" />
             </div>
             <div>
-              <h3 className="font-display font-semibold text-white">Cloud Sync (Supabase)</h3>
-              <p className="text-xs text-slate-400">Enable automatic cloud backup</p>
+              <h3 className="font-display font-semibold text-white">Cloud Sync</h3>
+              <p className="text-xs text-slate-400">Supabase — shared across all devices</p>
             </div>
           </div>
-          
-          <form onSubmit={handleSaveAuth} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Project URL</label>
-              <input type="text" value={supabaseUrl} onChange={e => setSupabaseUrl(e.target.value)} className="input-field" placeholder="https://xyzcompany.supabase.co" />
+
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-400">Status</span>
+              <span className={navigator.onLine ? 'text-green-400' : 'text-red-400'}>
+                {navigator.onLine ? '🟢 Online' : '🔴 Offline'}
+              </span>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Anon Key</label>
-              <input type="password" value={supabaseKey} onChange={e => setSupabaseKey(e.target.value)} className="input-field" placeholder="eyJh..." />
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-400">Pending uploads</span>
+              <span className={queueCount > 0 ? 'text-amber-400' : 'text-green-400'}>
+                {queueCount} item{queueCount !== 1 ? 's' : ''}
+              </span>
             </div>
-            <button type="submit" className="btn-primary w-full justify-center">
-              {isSaved ? <Check size={16} /> : <Save size={16} />}
-              {isSaved ? 'Saved!' : 'Save Configuration'}
+            {lastSynced && (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Last synced</span>
+                <span className="text-slate-300">{new Date(lastSynced).toLocaleTimeString()}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleManualSync}
+              disabled={syncing || !navigator.onLine}
+              className="btn-primary w-full justify-center mt-4"
+            >
+              {syncing ? 'Syncing...' : '🔄 Sync Now'}
             </button>
-          </form>
+            {syncMsg && (
+              <p className="text-xs text-center text-green-400 mt-1">{syncMsg}</p>
+            )}
+            <p className="text-xs text-slate-500 mt-2 text-center">
+              Cloud credentials are managed securely via environment variables.
+            </p>
+          </div>
         </div>
 
         {/* Database Management */}
@@ -97,7 +131,7 @@ export default function Settings() {
               <span>{seeding ? 'Generating...' : 'Load Dummy Data'}</span>
               <span className="text-xs">Fill DB with examples</span>
             </button>
-            <button className="btn-danger w-full justify-between mt-2">
+            <button onClick={handleClearData} className="btn-danger w-full justify-between mt-2">
               <span>Clear Local Data</span>
               <span className="text-xs">Factory Reset</span>
             </button>
@@ -112,24 +146,20 @@ export default function Settings() {
             </div>
             <div>
               <h3 className="font-display font-semibold text-white">Security</h3>
-              <p className="text-xs text-slate-400">Manage offline access PIN</p>
+              <p className="text-xs text-slate-400">PIN protects Finance, Staff, Analytics & Settings</p>
             </div>
           </div>
 
-          <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={e => e.preventDefault()}>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Current PIN</label>
-              <input type="password" maxLength={6} className="input-field" placeholder="****" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-3 glass-card p-4 border border-green-500/20 bg-green-500/5">
+              <div className="flex items-center gap-2 text-green-400 text-sm">
+                <CheckCircle size={16} />
+                <span>Access PIN is active. Protected sections require PIN <strong>88888888</strong> to access.</span>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">New PIN</label>
-              <input type="password" maxLength={6} className="input-field" placeholder="****" />
-            </div>
-            <div className="flex items-end">
-              <button className="btn-primary w-full justify-center">Change PIN</button>
-            </div>
-          </form>
+          </div>
         </div>
+
       </div>
     </div>
     </PinGuard>

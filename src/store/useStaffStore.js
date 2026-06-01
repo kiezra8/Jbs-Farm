@@ -55,6 +55,11 @@ export const useStaffStore = create((set, get) => ({
     set(s => ({ tasks: s.tasks.map(t => t.id === id ? task : t) }))
   },
 
+  deleteTask: async (id) => {
+    await db.tasks.delete(id)
+    set(s => ({ tasks: s.tasks.filter(t => t.id !== id) }))
+  },
+
   getStats: () => {
     const { staff, attendance, tasks } = get()
     const today = new Date().toISOString().split('T')[0]

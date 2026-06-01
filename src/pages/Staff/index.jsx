@@ -1,20 +1,31 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle2 } from 'lucide-react'
 import { useStaffStore } from '../../store/useStaffStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import PinGuard from '../../components/ui/PinGuard'
 import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 
 export default function Staff() {
-  const { staff, tasks, loadAll, getStats, addStaff, addTask, markAttendance } = useStaffStore()
+  const { staff, tasks, loadAll, getStats, addStaff, updateStaff, deleteStaff, addTask, updateTask, deleteTask, markAttendance } = useStaffStore()
   const [isStaffOpen, setIsStaffOpen] = useState(false)
   const [isTaskOpen, setIsTaskOpen] = useState(false)
+  const [editingStaff, setEditingStaff] = useState(null)
+  const [editingTask, setEditingTask] = useState(null)
 
-  const [staffData, setStaffData] = useState({ name: '', role: '', phone: '', salary: '', status: 'Active', joinDate: format(new Date(), 'yyyy-MM-dd') })
-  const [taskData, setTaskData] = useState({ title: '', staffId: '', priority: 'Medium', status: 'Pending', dueDate: format(new Date(), 'yyyy-MM-dd') })
+  const [selectedStaff, setSelectedStaff] = useState(null)
+  const [selectedTask, setSelectedTask] = useState(null)
+  const [isStaffDeleteOpen, setIsStaffDeleteOpen] = useState(false)
+  const [isTaskDeleteOpen, setIsTaskDeleteOpen] = useState(false)
+
+  const initialStaffForm = { name: '', role: '', phone: '', salary: '', status: 'Active', joinDate: format(new Date(), 'yyyy-MM-dd') }
+  const initialTaskForm = { title: '', staffId: '', priority: 'Medium', status: 'Pending', dueDate: format(new Date(), 'yyyy-MM-dd') }
+
+  const [staffData, setStaffData] = useState(initialStaffForm)
+  const [taskData, setTaskData] = useState(initialTaskForm)
 
   useEffect(() => { loadAll() }, [])
 
@@ -22,16 +33,28 @@ export default function Staff() {
 
   const handleStaffSave = async (e) => {
     e.preventDefault()
-    await addStaff({ ...staffData, salary: Number(staffData.salary) || 0 })
+    const payload = { ...staffData, salary: Number(staffData.salary) || 0 }
+    if (editingStaff) {
+      await updateStaff(editingStaff.id, payload)
+    } else {
+      await addStaff(payload)
+    }
     setIsStaffOpen(false)
-    setStaffData({ name: '', role: '', phone: '', salary: '', status: 'Active', joinDate: format(new Date(), 'yyyy-MM-dd') })
+    setEditingStaff(null)
+    setStaffData(initialStaffForm)
   }
 
   const handleTaskSave = async (e) => {
     e.preventDefault()
-    await addTask({ ...taskData, staffId: Number(taskData.staffId) })
+    const payload = { ...taskData, staffId: taskData.staffId }
+    if (editingTask) {
+      await updateTask(editingTask.id, payload)
+    } else {
+      await addTask(payload)
+    }
     setIsTaskOpen(false)
-    setTaskData({ title: '', staffId: '', priority: 'Medium', status: 'Pending', dueDate: format(new Date(), 'yyyy-MM-dd') })
+    setEditingTask(null)
+    setTaskData(initialTaskForm)
   }
 
   const staffCols = [
@@ -44,20 +67,66 @@ export default function Staff() {
     { key: 'role', label: 'Role' },
     { key: 'salary', label: 'Salary', render: (val) => formatUGX(val) },
     { key: 'status', label: 'Status', render: (val) => <Badge variant={val === 'Active' ? 'green' : 'gray'}>{val}</Badge> },
-    { key: 'actions', label: 'Attendance (Today)', render: (_, row) => (
+    { key: 'attendance', label: 'Attendance (Today)', render: (_, row) => (
       <div className="flex gap-2">
         <button onClick={() => markAttendance({ staffId: row.id, date: format(new Date(), 'yyyy-MM-dd'), status: 'Present' })} className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30">Present</button>
         <button onClick={() => markAttendance({ staffId: row.id, date: format(new Date(), 'yyyy-MM-dd'), status: 'Absent' })} className="text-xs px-2 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30">Absent</button>
+      </div>
+    )},
+    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+        <button onClick={() => {
+          setEditingStaff(row)
+          setStaffData({
+            name: row.name,
+            role: row.role,
+            phone: row.phone || '',
+            salary: String(row.salary),
+            status: row.status,
+            joinDate: row.joinDate
+          })
+          setIsStaffOpen(true)
+        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
+          <Edit2 size={14} />
+        </button>
+        <button onClick={() => { setSelectedStaff(row); setIsStaffDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
+          <Trash2 size={14} />
+        </button>
       </div>
     )}
   ]
 
   const taskCols = [
     { key: 'title', label: 'Task' },
-    { key: 'staffId', label: 'Assigned To', render: (val) => staff.find(s => s.id === val)?.name || 'Unassigned' },
+    { key: 'staffId', label: 'Assigned To', render: (val) => staff.find(s => String(s.id) === String(val))?.name || 'Unassigned' },
     { key: 'priority', label: 'Priority', render: (val) => <Badge variant={val === 'High' ? 'red' : val === 'Medium' ? 'amber' : 'green'}>{val}</Badge> },
     { key: 'status', label: 'Status', render: (val) => <Badge variant={val === 'Completed' ? 'green' : 'gray'}>{val}</Badge> },
     { key: 'dueDate', label: 'Due Date', render: (val) => val ? format(new Date(val), 'dd MMM yyyy') : '—' },
+    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+        {row.status !== 'Completed' && (
+          <button onClick={() => updateTask(row.id, { ...row, status: 'Completed' })} className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-400" title="Mark Completed">
+            <CheckCircle2 size={14} />
+          </button>
+        )}
+        <button onClick={() => {
+          setEditingTask(row)
+          setTaskData({
+            title: row.title,
+            staffId: row.staffId || '',
+            priority: row.priority,
+            status: row.status,
+            dueDate: row.dueDate
+          })
+          setIsTaskOpen(true)
+        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
+          <Edit2 size={14} />
+        </button>
+        <button onClick={() => { setSelectedTask(row); setIsTaskDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
+          <Trash2 size={14} />
+        </button>
+      </div>
+    )}
   ]
 
   return (
@@ -92,7 +161,7 @@ export default function Staff() {
         </div>
       </div>
 
-      <Modal isOpen={isStaffOpen} onClose={() => setIsStaffOpen(false)} title="Add Staff Member">
+      <Modal isOpen={isStaffOpen} onClose={() => { setIsStaffOpen(false); setEditingStaff(null); setStaffData(initialStaffForm) }} title={editingStaff ? "Edit Staff Member" : "Add Staff Member"}>
         <form onSubmit={handleStaffSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Full Name *</label><input required type="text" className="input-field" value={staffData.name} onChange={e => setStaffData({...staffData, name: e.target.value})} /></div>
@@ -105,15 +174,23 @@ export default function Staff() {
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Phone Number</label><input type="text" className="input-field" value={staffData.phone} onChange={e => setStaffData({...staffData, phone: e.target.value})} /></div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Monthly Salary (Ushs) *</label><input required type="number" className="input-field" value={staffData.salary} onChange={e => setStaffData({...staffData, salary: e.target.value})} /></div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Join Date *</label><input required type="date" className="input-field" value={staffData.joinDate} onChange={e => setStaffData({...staffData, joinDate: e.target.value})} /></div>
+            {editingStaff && (
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Status *</label>
+                <select required className="input-field" value={staffData.status} onChange={e => setStaffData({...staffData, status: e.target.value})}>
+                  <option>Active</option><option>Inactive</option>
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-            <button type="button" className="btn-secondary" onClick={() => setIsStaffOpen(false)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => { setIsStaffOpen(false); setEditingStaff(null); setStaffData(initialStaffForm) }}>Cancel</button>
             <button type="submit" className="btn-primary">Save Staff</button>
           </div>
         </form>
       </Modal>
 
-      <Modal isOpen={isTaskOpen} onClose={() => setIsTaskOpen(false)} title="Assign Task">
+      <Modal isOpen={isTaskOpen} onClose={() => { setIsTaskOpen(false); setEditingTask(null); setTaskData(initialTaskForm) }} title={editingTask ? "Edit Task Assignment" : "Assign Task"}>
         <form onSubmit={handleTaskSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Task Title *</label><input required type="text" className="input-field" value={taskData.title} onChange={e => setTaskData({...taskData, title: e.target.value})} placeholder="e.g. Repair fence in Section B" /></div>
@@ -131,13 +208,24 @@ export default function Staff() {
               </select>
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Due Date *</label><input required type="date" className="input-field" value={taskData.dueDate} onChange={e => setTaskData({...taskData, dueDate: e.target.value})} /></div>
+            {editingTask && (
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Status</label>
+                <select className="input-field" value={taskData.status} onChange={e => setTaskData({...taskData, status: e.target.value})}>
+                  <option>Pending</option><option>Completed</option>
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-            <button type="button" className="btn-secondary" onClick={() => setIsTaskOpen(false)}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => { setIsTaskOpen(false); setEditingTask(null); setTaskData(initialTaskForm) }}>Cancel</button>
             <button type="submit" className="btn-primary">Assign Task</button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog isOpen={isStaffDeleteOpen} onClose={() => setIsStaffDeleteOpen(false)} onConfirm={() => { if(selectedStaff) deleteStaff(selectedStaff.id) }} title="Remove Staff Member?" message={`Are you sure you want to permanently remove ${selectedStaff?.name} from staff records?`} />
+      <ConfirmDialog isOpen={isTaskDeleteOpen} onClose={() => setIsTaskDeleteOpen(false)} onConfirm={() => { if(selectedTask) deleteTask(selectedTask.id) }} title="Delete Task?" message={`Are you sure you want to permanently delete this task?`} />
     </div>
     </PinGuard>
   )
