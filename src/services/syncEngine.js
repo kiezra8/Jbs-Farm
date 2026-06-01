@@ -133,6 +133,7 @@ export async function processSyncQueue() {
       } catch (e) {
         console.error(`Sync failed for [${item.table}] id=${item.recordId}:`, e.message)
         await db.syncQueue.update(item.id, { status: 'error', error: e.message })
+        store.setSyncError(e.message)
       }
     }
 

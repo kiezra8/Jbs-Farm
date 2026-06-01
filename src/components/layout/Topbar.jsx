@@ -22,7 +22,7 @@ const pageTitles = {
 
 export default function Topbar() {
   const { darkMode, toggleDarkMode, toggleSidebar, setMobileMenu, mobileMenuOpen } = useUIStore()
-  const { isOnline, isSyncing, lastSynced, queueCount } = useSyncStore()
+  const { isOnline, isSyncing, lastSynced, queueCount, syncError } = useSyncStore()
   const { unreadCount } = useNotificationStore()
   const location = useLocation()
   const navigate = useNavigate()
@@ -64,8 +64,8 @@ export default function Topbar() {
           ) : (
             <WifiOff size={13} className="text-red-400" />
           )}
-          <span className={isSyncing ? 'text-amber-400' : isOnline ? 'text-green-400' : 'text-red-400'}>
-            {isSyncing ? 'Syncing...' : isOnline ? lastSyncText : 'Offline'}
+          <span className={syncError ? 'text-red-500 font-bold' : isSyncing ? 'text-amber-400' : isOnline ? 'text-green-400' : 'text-red-400'}>
+            {syncError ? `Sync Error: ${syncError}` : isSyncing ? 'Syncing...' : isOnline ? lastSyncText : 'Offline'}
           </span>
           {queueCount > 0 && (
             <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px]">

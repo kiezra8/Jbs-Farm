@@ -46,7 +46,7 @@ export default function Milk() {
     { key: 'tagNumber', label: 'Cow', render: (val, row) => (
       <div><p className="font-medium text-white">{val}</p><p className="text-xs text-slate-400">{row.animalName}</p></div>
     )},
-    { key: 'session', label: 'Session', render: (val) => <Badge variant={val === 'Morning' ? 'blue' : 'purple'}>{val}</Badge> },
+    { key: 'session', label: 'Session', render: (val) => <Badge variant={val === 'Morning' ? 'blue' : val === 'Afternoon' ? 'amber' : 'purple'}>{val}</Badge> },
     { key: 'amount', label: 'Amount (Liters)', render: (val) => formatLiters(val) },
     { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
       <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
@@ -112,7 +112,7 @@ export default function Milk() {
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Session *</label>
               <select required className="input-field" value={formData.session} onChange={e => setFormData({...formData, session: e.target.value})}>
-                <option>Morning</option><option>Evening</option>
+                <option>Morning</option><option>Afternoon</option><option>Evening</option>
               </select>
             </div>
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Amount (Liters) *</label><input required type="number" step="0.1" className="input-field" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} /></div>
