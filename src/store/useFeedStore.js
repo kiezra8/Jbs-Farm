@@ -15,6 +15,16 @@ export const useFeedStore = create((set, get) => ({
       { feedType: 'Hay', unit: 'bales', currentStock: 0, minStock: 50, unitCost: 12000 },
       { feedType: 'Silage', unit: 'kg', currentStock: 0, minStock: 1000, unitCost: 800 },
       { feedType: 'Pasture', unit: 'acres', currentStock: 0, minStock: 30, unitCost: 20000 },
+      { feedType: 'Maize Bran', unit: 'kg', currentStock: 0, minStock: 500, unitCost: 1200 },
+      { feedType: 'Broken Maize', unit: 'kg', currentStock: 0, minStock: 500, unitCost: 1500 },
+      { feedType: 'Sunflower Cake', unit: 'kg', currentStock: 0, minStock: 300, unitCost: 2000 },
+      { feedType: 'Cotton Cake', unit: 'kg', currentStock: 0, minStock: 300, unitCost: 2200 },
+      { feedType: 'Premix', unit: 'kg', currentStock: 0, minStock: 100, unitCost: 8000 },
+      { feedType: 'Calcium', unit: 'kg', currentStock: 0, minStock: 100, unitCost: 3000 },
+      { feedType: 'Blown Salt', unit: 'kg', currentStock: 0, minStock: 50, unitCost: 1800 },
+      { feedType: 'White Salt', unit: 'kg', currentStock: 0, minStock: 50, unitCost: 1500 },
+      { feedType: 'Mineral Blocks', unit: 'blocks', currentStock: 0, minStock: 10, unitCost: 25000 },
+      { feedType: 'Kikanja', unit: 'kg', currentStock: 0, minStock: 200, unitCost: 900 },
     ]
     
     let needsReload = false

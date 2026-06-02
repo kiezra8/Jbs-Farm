@@ -4,7 +4,6 @@ import { db } from '../../db/schema'
 import { seedDatabase } from '../../db/seedData'
 import { fetchAllFromFirebase, processSyncQueue, forceUploadAllLocalData } from '../../services/syncEngine'
 import { useSyncStore } from '../../store/useSyncStore'
-import PinGuard from '../../components/ui/PinGuard'
 
 export default function Settings() {
   const [seeding, setSeeding] = useState(false)
@@ -61,7 +60,6 @@ export default function Settings() {
   }
 
   return (
-    <PinGuard>
     <div className="space-y-6 max-w-4xl">
       <div className="page-header">
         <div>
@@ -168,7 +166,7 @@ export default function Settings() {
             </div>
             <div>
               <h3 className="font-display font-semibold text-white">Security</h3>
-              <p className="text-xs text-slate-400">PIN protects Finance, Staff, Analytics & Settings</p>
+              <p className="text-xs text-slate-400">PIN protects Finance &amp; Staff sections</p>
             </div>
           </div>
 
@@ -176,7 +174,7 @@ export default function Settings() {
             <div className="md:col-span-3 glass-card p-4 border border-green-500/20 bg-green-500/5">
               <div className="flex items-center gap-2 text-green-400 text-sm">
                 <CheckCircle size={16} />
-                <span>Access PIN is active. Protected sections require PIN <strong>88888888</strong> to access.</span>
+                <span>Access PIN is active. Finance and Staff sections are PIN protected.</span>
               </div>
             </div>
           </div>
@@ -184,6 +182,5 @@ export default function Settings() {
 
       </div>
     </div>
-    </PinGuard>
   )
 }
