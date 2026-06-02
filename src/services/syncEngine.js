@@ -1,30 +1,40 @@
 import { db } from '../db/schema'
 import { useSyncStore } from '../store/useSyncStore'
-import { createClient } from '@supabase/supabase-js'
+import { initializeApp } from 'firebase/app'
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore'
 
-let supabase = null
+const firebaseConfig = {
+  apiKey: "AIzaSyBtBDImA3JxW6drta2qG8Kacx4lk7yG85M",
+  authDomain: "erands-guy.firebaseapp.com",
+  projectId: "erands-guy",
+  storageBucket: "erands-guy.firebasestorage.app",
+  messagingSenderId: "184159634431",
+  appId: "1:184159634431:web:a5a2f328444104562a1dca",
+  measurementId: "G-29GWN7E6C6"
+};
 
-// Prevents hooks from re-queuing data that came FROM Supabase
+let firestore = null
+
+// Prevents hooks from re-queuing data that came FROM Firebase
 let skipHooks = false
 
 // Prevents hooks from being registered more than once
 let hooksInitialized = false
 
-export function initSupabase(url, key) {
+export function initFirebase() {
   try {
-    if (url && key) {
-      supabase = createClient(url, key)
-      return true
-    }
+    const app = initializeApp(firebaseConfig)
+    firestore = getFirestore(app)
+    return true
   } catch (e) {
-    console.warn('Supabase init failed:', e)
+    console.warn('Firebase init failed:', e)
   }
   return false
 }
 
-export function getSupabase() { return supabase }
+export function getFirestoreDb() { return firestore }
 
-// All tables that get synced — Dexie name : Supabase table name
+// All tables that get synced — Dexie name : Firebase collection name
 const SYNC_TABLES = {
   animals:          'animals',
   healthRecords:    'healthRecords',
@@ -39,27 +49,24 @@ const SYNC_TABLES = {
   notifications:    'notifications',
 }
 
-// ─── Pull ALL data from Supabase into local IndexedDB ─────────────
+// ─── Pull ALL data from Firebase into local IndexedDB ─────────────
 // Called on app start when online — ensures every user sees shared data
-export async function fetchAllFromSupabase() {
-  if (!supabase) return
-  console.log('⬇️  Pulling data from Supabase...')
+export async function fetchAllFromFirebase() {
+  if (!firestore) return
+  console.log('⬇️  Pulling data from Firebase...')
 
-  skipHooks = true   // stop hooks from re-queuing Supabase data back up
+  skipHooks = true   // stop hooks from re-queuing Firebase data back up
   try {
-    for (const [dexieTable, supabaseTable] of Object.entries(SYNC_TABLES)) {
+    for (const [dexieTable, firebaseCollection] of Object.entries(SYNC_TABLES)) {
       try {
-        const { data, error } = await supabase
-          .from(supabaseTable)
-          .select('*')
-          .order('id', { ascending: true })
+        const querySnapshot = await getDocs(collection(firestore, firebaseCollection))
+        const data = []
+        querySnapshot.forEach((docSnap) => {
+          data.push(docSnap.data())
+        })
 
-        if (error) {
-          console.warn(`Supabase fetch failed for ${supabaseTable}:`, error.message)
-          continue
-        }
-
-        if (data && data.length > 0) {
+        if (data.length > 0) {
+          data.sort((a, b) => (a.id > b.id ? 1 : -1))
           // bulkPut merges cloud records into local — safe, non-destructive
           await db[dexieTable].bulkPut(data)
         }
@@ -69,7 +76,7 @@ export async function fetchAllFromSupabase() {
     }
 
     useSyncStore.getState().setLastSynced(new Date().toISOString())
-    console.log('✅ Supabase sync complete')
+    console.log('✅ Firebase sync complete')
   } finally {
     skipHooks = false
   }
@@ -89,7 +96,7 @@ export async function addToSyncQueue(table, operation, recordId, data) {
     useSyncStore.getState().incrementQueue()
 
     // Immediately attempt to flush the queue if we are online
-    if (navigator.onLine && supabase) {
+    if (navigator.onLine && firestore) {
       processSyncQueue()
     }
   } catch (e) {
@@ -97,9 +104,9 @@ export async function addToSyncQueue(table, operation, recordId, data) {
   }
 }
 
-// ─── Push all pending local changes up to Supabase ────────────────
+// ─── Push all pending local changes up to Firebase ────────────────
 export async function processSyncQueue() {
-  if (!supabase) return
+  if (!firestore) return
   const store = useSyncStore.getState()
   if (!store.isOnline || store.isSyncing) return
 
@@ -118,14 +125,9 @@ export async function processSyncQueue() {
         if (item.operation === 'upsert') {
           const data = JSON.parse(item.data)
           if (!data) continue
-          const { error } = await supabase.from(item.table).upsert(data)
-          if (error) throw error
+          await setDoc(doc(firestore, item.table, String(item.recordId)), data, { merge: true })
         } else if (item.operation === 'delete') {
-          const { error } = await supabase
-            .from(item.table)
-            .delete()
-            .eq('id', item.recordId)
-          if (error) throw error
+          await deleteDoc(doc(firestore, item.table, String(item.recordId)))
         }
 
         await db.syncQueue.update(item.id, { status: 'synced' })
@@ -188,12 +190,12 @@ export function initSyncEngine() {
   const handleOnline = () => {
     store.setOnline(true)
     // When connection is restored: push local changes, then pull latest from cloud
-    processSyncQueue().then(() => fetchAllFromSupabase())
+    processSyncQueue().then(() => fetchAllFromFirebase())
   }
   const handleOffline = () => store.setOnline(false)
   const handleFocus = () => {
-    if (navigator.onLine && supabase) {
-      processSyncQueue().then(() => fetchAllFromSupabase())
+    if (navigator.onLine && firestore) {
+      processSyncQueue().then(() => fetchAllFromFirebase())
     }
   }
 
@@ -210,8 +212,8 @@ export function initSyncEngine() {
 
   // Auto-sync every 2 minutes when online
   const interval = setInterval(() => {
-    if (navigator.onLine && supabase) {
-      processSyncQueue().then(() => fetchAllFromSupabase())
+    if (navigator.onLine && firestore) {
+      processSyncQueue().then(() => fetchAllFromFirebase())
     }
   }, 2 * 60 * 1000)
 

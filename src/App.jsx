@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from './store/useAuthStore'
 import { useUIStore } from './store/useUIStore'
-import { initSyncEngine, initSupabase, fetchAllFromSupabase } from './services/syncEngine'
+import { initSyncEngine, initFirebase, fetchAllFromFirebase } from './services/syncEngine'
 
 import AppLayout from './components/layout/AppLayout'
 
@@ -38,17 +38,10 @@ function App() {
   useEffect(() => {
     initTheme()
 
-    // Supabase credentials come from Cloudflare env vars (set in Pages dashboard)
-    // They are NEVER stored in source code or the settings page
-    const url = import.meta.env.VITE_SUPABASE_URL
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-    if (url && key) {
-      const ok = initSupabase(url, key)
-      if (ok && navigator.onLine) {
-        // Pull latest cloud data so all users see the same records
-        fetchAllFromSupabase()
-      }
+    const ok = initFirebase()
+    if (ok && navigator.onLine) {
+      // Pull latest cloud data so all users see the same records
+      fetchAllFromFirebase()
     }
 
     // Start the offline sync engine (queues writes, flushes on reconnect)
