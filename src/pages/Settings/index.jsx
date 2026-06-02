@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Save, Database, Shield, Download, Upload, CheckCircle, Cloud } from 'lucide-react'
 import { db } from '../../db/schema'
 import { seedDatabase } from '../../db/seedData'
-import { fetchAllFromFirebase, processSyncQueue } from '../../services/syncEngine'
+import { fetchAllFromFirebase, processSyncQueue, forceUploadAllLocalData } from '../../services/syncEngine'
 import { useSyncStore } from '../../store/useSyncStore'
 import PinGuard from '../../components/ui/PinGuard'
 
@@ -17,6 +17,21 @@ export default function Settings() {
     await seedDatabase()
     setSeeding(false)
     window.location.reload()
+  }
+
+  const handleForceUpload = async () => {
+    if (!window.confirm('This will force upload ALL local data to Firebase. Proceed?')) return
+    setSyncing(true)
+    setSyncMsg('Forcing upload...')
+    try {
+      await forceUploadAllLocalData()
+      setSyncMsg('Force upload complete!')
+    } catch (e) {
+      setSyncMsg('Upload failed: ' + e.message)
+    } finally {
+      setSyncing(false)
+      setTimeout(() => setSyncMsg(''), 4000)
+    }
   }
 
   const handleManualSync = async () => {
@@ -95,6 +110,13 @@ export default function Settings() {
               className="btn-primary w-full justify-center mt-4"
             >
               {syncing ? 'Syncing...' : '🔄 Sync Now'}
+            </button>
+            <button
+              onClick={handleForceUpload}
+              disabled={syncing || !navigator.onLine}
+              className="btn-secondary w-full justify-center mt-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+            >
+              {syncing ? 'Uploading...' : '🚀 Force Push All Data'}
             </button>
             {syncMsg && (
               <p className="text-xs text-center text-green-400 mt-1">{syncMsg}</p>
