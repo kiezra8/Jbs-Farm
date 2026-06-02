@@ -16,7 +16,7 @@ const firebaseConfig = {
 let firestore = null
 
 // Prevents hooks from re-queuing data that came FROM Firebase
-let skipHooks = false
+let skipHooks = {}
 
 // Prevents hooks from being registered more than once
 let hooksInitialized = false
@@ -72,7 +72,7 @@ export async function fetchAllFromFirebase() {
         // onSnapshot listens for real-time changes. Whenever ANY user adds/edits data,
         // this triggers instantly and updates the local IndexedDB.
         const unsub = onSnapshot(q, async (querySnapshot) => {
-          skipHooks = true // Prevent echoing changes back to Firebase
+          skipHooks[dexieTable] = true // Prevent echoing changes back to Firebase
           try {
             const data = []
             querySnapshot.forEach((docSnap) => {
@@ -91,7 +91,7 @@ export async function fetchAllFromFirebase() {
           } catch (err) {
             console.error(`Error updating local ${dexieTable}:`, err)
           } finally {
-            skipHooks = false
+            skipHooks[dexieTable] = false
           }
         }, (error) => {
           console.warn(`Real-time sync error on ${dexieTable}:`, error.message)
@@ -184,7 +184,7 @@ export function setupDexieHooks() {
     // CREATE — a new record was inserted locally
     db[table].hook('creating', function (primKey, obj, trans) {
       this.onsuccess = function (generatedKey) {
-        if (skipHooks) return
+        if (skipHooks[table]) return
         addToSyncQueue(table, 'upsert', generatedKey, { ...obj, id: generatedKey })
       }
     })
@@ -194,7 +194,7 @@ export function setupDexieHooks() {
     db[table].hook('updating', function (mods, primKey, obj) {
       const fullRecord = { ...obj, ...mods }   // reconstruct the updated record
       this.onsuccess = function () {
-        if (skipHooks) return
+        if (skipHooks[table]) return
         addToSyncQueue(table, 'upsert', primKey, fullRecord)
       }
     })
@@ -202,7 +202,7 @@ export function setupDexieHooks() {
     // DELETE — a record was removed locally
     db[table].hook('deleting', function (primKey) {
       this.onsuccess = function () {
-        if (skipHooks) return
+        if (skipHooks[table]) return
         addToSyncQueue(table, 'delete', primKey, null)
       }
     })
