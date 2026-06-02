@@ -49,36 +49,64 @@ const SYNC_TABLES = {
   notifications:    'notifications',
 }
 
-// ─── Pull ALL data from Firebase into local IndexedDB ─────────────
-// Called on app start when online — ensures every user sees shared data
+import { onSnapshot } from 'firebase/firestore'
+
+// Store active listeners so we can unsubscribe if needed
+let unsubscribes = []
+
+// ─── Pull ALL data from Firebase into local IndexedDB (REAL-TIME) ─────────────
+// This replaces the old polling method with instant real-time sync
 export async function fetchAllFromFirebase() {
   if (!firestore) return
-  console.log('⬇️  Pulling data from Firebase...')
+  console.log('⬇️  Setting up real-time sync from Firebase...')
 
-  skipHooks = true   // stop hooks from re-queuing Firebase data back up
+  // Clear old listeners if we are reconnecting
+  unsubscribes.forEach(unsub => unsub())
+  unsubscribes = []
+
   try {
     for (const [dexieTable, firebaseCollection] of Object.entries(SYNC_TABLES)) {
       try {
-        const querySnapshot = await getDocs(collection(firestore, firebaseCollection))
-        const data = []
-        querySnapshot.forEach((docSnap) => {
-          data.push(docSnap.data())
+        const q = collection(firestore, firebaseCollection)
+        
+        // onSnapshot listens for real-time changes. Whenever ANY user adds/edits data,
+        // this triggers instantly and updates the local IndexedDB.
+        const unsub = onSnapshot(q, async (querySnapshot) => {
+          skipHooks = true // Prevent echoing changes back to Firebase
+          try {
+            const data = []
+            querySnapshot.forEach((docSnap) => {
+              const docData = docSnap.data()
+              if (docData.id !== '_placeholder') {
+                data.push(docData)
+              }
+            })
+
+            if (data.length > 0) {
+              // Sort locally
+              data.sort((a, b) => (a.id > b.id ? 1 : -1))
+              // Merge cloud records into local — safe, non-destructive
+              await db[dexieTable].bulkPut(data)
+            }
+          } catch (err) {
+            console.error(`Error updating local ${dexieTable}:`, err)
+          } finally {
+            skipHooks = false
+          }
+        }, (error) => {
+          console.warn(`Real-time sync error on ${dexieTable}:`, error.message)
         })
 
-        if (data.length > 0) {
-          data.sort((a, b) => (a.id > b.id ? 1 : -1))
-          // bulkPut merges cloud records into local — safe, non-destructive
-          await db[dexieTable].bulkPut(data)
-        }
+        unsubscribes.push(unsub)
       } catch (e) {
-        console.warn(`Could not sync ${dexieTable}:`, e.message)
+        console.warn(`Could not setup real-time sync for ${dexieTable}:`, e.message)
       }
     }
 
     useSyncStore.getState().setLastSynced(new Date().toISOString())
-    console.log('✅ Firebase sync complete')
-  } finally {
-    skipHooks = false
+    console.log('✅ Real-time Firebase sync initialized')
+  } catch (e) {
+    console.error('Fatal sync setup error:', e)
   }
 }
 
@@ -181,11 +209,59 @@ export function setupDexieHooks() {
   })
 }
 
+// ─── Migration Helper: Upload all existing local data to Firebase ─
+export async function forceUploadAllLocalData() {
+  if (!firestore) return
+  console.log('⬆️ Forcing upload of all existing local data to Firebase...')
+  
+  try {
+    for (const [dexieTable, firebaseCollection] of Object.entries(SYNC_TABLES)) {
+      const records = await db[dexieTable].toArray()
+      if (records.length === 0) continue
+      
+      let count = 0
+      for (const record of records) {
+        if (!record.id) continue
+        await setDoc(doc(firestore, firebaseCollection, String(record.id)), record, { merge: true })
+        count++
+      }
+      console.log(`✅ Uploaded ${count} records to [${firebaseCollection}]`)
+    }
+    console.log('🚀 Migration to Firebase complete! Check your Firebase Console.')
+  } catch (e) {
+    console.error('❌ Migration failed:', e)
+  }
+}
+
+// ─── Init Helper: Create empty placeholder docs to make collections visible ─
+export async function initializeEmptyCollections() {
+  if (!firestore) return
+  console.log('⬆️ Generating placeholders to make all collections visible...')
+  
+  try {
+    for (const firebaseCollection of Object.values(SYNC_TABLES)) {
+      // Write a dummy document so Firebase creates the collection.
+      // The app is programmed to ignore any document with id: '_placeholder'
+      await setDoc(doc(firestore, firebaseCollection, '_placeholder'), {
+        id: '_placeholder',
+        note: 'This keeps the collection visible in Firebase even when empty. Do not delete unless you have other data here.'
+      })
+    }
+    console.log('✅ Placeholders created! Refresh your Firebase Console to see all categories.')
+  } catch (e) {
+    console.error('❌ Placeholder generation failed:', e)
+  }
+}
+
 // ─── Bootstrap: call this once from App.jsx ───────────────────────
 export function initSyncEngine() {
   const store = useSyncStore.getState()
 
   setupDexieHooks()
+
+  // Expose migration tools globally for easy manual triggering
+  window.forceUploadToFirebase = forceUploadAllLocalData
+  window.initializeEmptyCollections = initializeEmptyCollections
 
   const handleOnline = () => {
     store.setOnline(true)

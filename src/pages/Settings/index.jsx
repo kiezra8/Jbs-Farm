@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Save, Database, Shield, Download, Upload, CheckCircle, Cloud } from 'lucide-react'
 import { db } from '../../db/schema'
 import { seedDatabase } from '../../db/seedData'
-import { fetchAllFromSupabase, processSyncQueue } from '../../services/syncEngine'
+import { fetchAllFromFirebase, processSyncQueue } from '../../services/syncEngine'
 import { useSyncStore } from '../../store/useSyncStore'
 import PinGuard from '../../components/ui/PinGuard'
 
@@ -24,7 +24,7 @@ export default function Settings() {
     setSyncMsg('')
     try {
       await processSyncQueue()
-      await fetchAllFromSupabase()
+      await fetchAllFromFirebase()
       setSyncMsg('Sync complete!')
     } catch (e) {
       setSyncMsg('Sync failed: ' + e.message)
@@ -65,7 +65,7 @@ export default function Settings() {
             </div>
             <div>
               <h3 className="font-display font-semibold text-white">Cloud Sync</h3>
-              <p className="text-xs text-slate-400">Supabase — shared across all devices</p>
+              <p className="text-xs text-slate-400">Firebase — shared across all devices</p>
             </div>
           </div>
 
