@@ -74,19 +74,26 @@ export async function fetchAllFromFirebase() {
         const unsub = onSnapshot(q, async (querySnapshot) => {
           skipHooks[dexieTable] = true // Prevent echoing changes back to Firebase
           try {
-            const data = []
-            querySnapshot.forEach((docSnap) => {
-              const docData = docSnap.data()
-              if (docData.id !== '_placeholder') {
-                data.push(docData)
+            const toUpsert = []
+            const toDelete = []
+
+            querySnapshot.docChanges().forEach((change) => {
+              const docData = change.doc.data()
+              if (docData.id === '_placeholder') return
+
+              if (change.type === 'added' || change.type === 'modified') {
+                toUpsert.push(docData)
+              } else if (change.type === 'removed') {
+                toDelete.push(docData.id) // Get the ID to delete locally
               }
             })
 
-            if (data.length > 0) {
-              // Sort locally
-              data.sort((a, b) => (a.id > b.id ? 1 : -1))
-              // Merge cloud records into local — safe, non-destructive
-              await db[dexieTable].bulkPut(data)
+            // Apply Firebase changes to local IndexedDB
+            if (toUpsert.length > 0) {
+              await db[dexieTable].bulkPut(toUpsert)
+            }
+            if (toDelete.length > 0) {
+              await db[dexieTable].bulkDelete(toDelete)
             }
           } catch (err) {
             console.error(`Error updating local ${dexieTable}:`, err)
