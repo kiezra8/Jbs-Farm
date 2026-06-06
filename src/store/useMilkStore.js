@@ -44,8 +44,12 @@ export const useMilkStore = create((set, get) => ({
     const result = []
     for (let i = days - 1; i >= 0; i--) {
       const date = format(subDays(new Date(), i), 'yyyy-MM-dd')
-      const total = records.filter(r => r.date === date).reduce((sum, r) => sum + (r.amount || 0), 0)
-      result.push({ date, total, label: format(subDays(new Date(), i), 'MMM d') })
+      const dayRecords = records.filter(r => r.date === date)
+      const total = dayRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
+      const calves = dayRecords.reduce((sum, r) => sum + (r.calvesAmount || 0), 0)
+      const net = total - calves
+      const revenue = net * 1500
+      result.push({ date, total, calves, net, revenue, label: format(subDays(new Date(), i), 'MMM d') })
     }
     return result
   },
@@ -62,6 +66,11 @@ export const useMilkStore = create((set, get) => ({
     const yesterdayTotal = records.filter(r => r.date === yesterday).reduce((sum, r) => sum + (r.amount || 0), 0)
     const change = yesterdayTotal > 0 ? ((todayTotal - yesterdayTotal) / yesterdayTotal * 100).toFixed(1) : 0
     const monthTotal = records.reduce((sum, r) => sum + (r.amount || 0), 0)
-    return { todayTotal, yesterdayTotal, change: Number(change), monthTotal }
+    
+    const todayCalves = records.filter(r => r.date === today).reduce((sum, r) => sum + (r.calvesAmount || 0), 0)
+    const todayNet = todayTotal - todayCalves
+    const todayRevenue = todayNet * 1500
+
+    return { todayTotal, yesterdayTotal, change: Number(change), monthTotal, todayCalves, todayNet, todayRevenue }
   },
 }))
