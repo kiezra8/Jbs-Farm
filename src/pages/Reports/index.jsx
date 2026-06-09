@@ -36,27 +36,61 @@ export default function Reports() {
   }
 
   const handleExportMilk = (type) => {
-    const data = {
-      title: 'Milk Production Report',
-      columns: [
-        { key: 'date', header: 'Date' },
-        { key: 'animalTag', header: 'Cow Tag' },
-        { key: 'animalName', header: 'Name' },
-        { key: 'session', header: 'Session' },
-        { key: 'amount', header: 'Liters' }
-      ],
-      rows: milkRecords.map(r => {
+    const pivotedRowsMap = {}
+    milkRecords.forEach(r => {
+      const key = `${r.date}_${r.animalId}`
+      if (!pivotedRowsMap[key]) {
         const animal = animals.find(a => String(a.id) === String(r.animalId))
-        return {
-          ...r,
+        pivotedRowsMap[key] = {
+          date: r.date,
+          animalId: r.animalId,
           animalTag: animal?.tagNumber || '—',
           animalName: animal?.name || '—',
-          amount: `${r.amount || 0} L`
+          morning: 0,
+          afternoon: 0,
+          evening: 0,
+          totalAmount: 0
         }
+      }
+      const row = pivotedRowsMap[key]
+      if (r.session === 'Morning') row.morning += (r.amount || 0)
+      if (r.session === 'Afternoon') row.afternoon += (r.amount || 0)
+      if (r.session === 'Evening') row.evening += (r.amount || 0)
+      row.totalAmount += (r.amount || 0)
+    })
+
+    const rows = Object.values(pivotedRowsMap).map(row => ({
+      ...row,
+      morning: row.morning > 0 ? `${row.morning} L` : '—',
+      afternoon: row.afternoon > 0 ? `${row.afternoon} L` : '—',
+      evening: row.evening > 0 ? `${row.evening} L` : '—',
+      totalAmount: `${row.totalAmount} L`
+    }))
+
+    const pdfColumns = [
+      { key: 'animalTag', header: 'Cow Tag' },
+      { key: 'animalName', header: 'Name' },
+      { key: 'morning', header: 'Morning' },
+      { key: 'afternoon', header: 'Afternoon' },
+      { key: 'evening', header: 'Evening' },
+      { key: 'totalAmount', header: 'Total' }
+    ]
+
+    if (type === 'pdf') {
+      exportToPDF({ 
+        title: 'Milk Production Report',
+        columns: pdfColumns,
+        rows: rows,
+        groupBy: 'date',
+        groupFormat: (val) => new Date(val).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      })
+    } else {
+      exportToExcel({
+        title: 'Milk Production Report',
+        columns: [{ key: 'date', header: 'Date' }, ...pdfColumns],
+        rows: rows
       })
     }
-    if (type === 'pdf') exportToPDF(data)
-    else exportToExcel(data)
   }
 
   const handleExportFinance = (type) => {

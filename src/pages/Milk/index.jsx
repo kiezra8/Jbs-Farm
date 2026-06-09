@@ -20,15 +20,79 @@ export default function Milk() {
 
   const initialForm = { animalId: '', date: format(new Date(), 'yyyy-MM-dd'), session: 'Morning', amount: '', calvesAmount: '' }
   const [formData, setFormData] = useState(initialForm)
+  const [selectedDateFilter, setSelectedDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'))
 
   useEffect(() => { loadRecords(); loadAnimals() }, [])
 
   const stats = getStats()
   const dailyTotals = getDailyTotals(7)
-  const enhancedRecords = records.map(r => {
-    const animal = animals.find(a => String(a.id) === String(r.animalId))
-    return { ...r, animalName: animal?.name, tagNumber: animal?.tagNumber }
+  const recordsForDate = records.filter(r => r.date === selectedDateFilter)
+
+  const cowMap = {}
+  recordsForDate.forEach(r => {
+    if (!cowMap[r.animalId]) {
+      const animal = animals.find(a => String(a.id) === String(r.animalId))
+      cowMap[r.animalId] = {
+        id: r.animalId, // for DataTable key
+        animalId: r.animalId,
+        animalName: animal?.name || 'Unknown',
+        tagNumber: animal?.tagNumber || 'N/A',
+        Morning: 0,
+        Afternoon: 0,
+        Evening: 0,
+        calvesAmount: 0,
+        totalAmount: 0,
+        records: {}
+      }
+    }
+    const row = cowMap[r.animalId]
+    row[r.session] += Number(r.amount) || 0
+    row.calvesAmount += Number(r.calvesAmount) || 0
+    row.totalAmount += Number(r.amount) || 0
+    row.records[r.session] = r
   })
+
+  const pivotedData = Object.values(cowMap)
+
+  const editSessionRecord = (row, session) => {
+    const existingRecord = row.records[session]
+    if (existingRecord) {
+      setEditingRecord(existingRecord)
+      setFormData({
+        animalId: existingRecord.animalId,
+        date: existingRecord.date,
+        session: existingRecord.session,
+        amount: String(existingRecord.amount),
+        calvesAmount: String(existingRecord.calvesAmount || '')
+      })
+    } else {
+      setEditingRecord(null)
+      setFormData({
+        animalId: row.animalId,
+        date: selectedDateFilter,
+        session: session,
+        amount: '',
+        calvesAmount: ''
+      })
+    }
+    setIsModalOpen(true)
+  }
+
+  const SessionCell = ({ val, row, session }) => (
+    <div className="flex items-center justify-between group">
+      <span className={val > 0 ? 'text-white font-medium' : 'text-slate-500'}>{val > 0 ? formatLiters(val) : '—'}</span>
+      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={() => editSessionRecord(row, session)} className="p-1 text-slate-400 hover:text-white" title={val > 0 ? "Edit" : "Add"}>
+          {val > 0 ? <Edit2 size={12} /> : <Plus size={12} />}
+        </button>
+        {val > 0 && (
+           <button onClick={() => { setSelectedRecord(row.records[session]); setIsDeleteOpen(true) }} className="p-1 text-slate-400 hover:text-red-400" title="Delete">
+             <Trash2 size={12} />
+           </button>
+        )}
+      </div>
+    </div>
+  )
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -44,35 +108,15 @@ export default function Milk() {
   }
 
   const columns = [
-    { key: 'date', label: 'Date', render: (val) => format(new Date(val), 'dd MMM yyyy') },
     { key: 'tagNumber', label: 'Cow', render: (val, row) => (
       <div><p className="font-medium text-white">{val}</p><p className="text-xs text-slate-400">{row.animalName}</p></div>
     )},
-    { key: 'session', label: 'Session', render: (val) => <Badge variant={val === 'Morning' ? 'blue' : val === 'Afternoon' ? 'amber' : 'purple'}>{val}</Badge> },
-    { key: 'amount', label: 'Total (L)', render: (val) => formatLiters(val) },
-    { key: 'calvesAmount', label: 'Calves (L)', render: (val) => formatLiters(val || 0) },
-    { key: 'netAmount', label: 'Net (L)', render: (_, row) => formatLiters((row.amount || 0) - (row.calvesAmount || 0)) },
-    { key: 'revenue', label: 'Revenue', render: (_, row) => new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(((row.amount || 0) - (row.calvesAmount || 0)) * 1500) },
-    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
-      <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-        <button onClick={() => {
-          setEditingRecord(row)
-          setFormData({
-            animalId: row.animalId,
-            date: row.date,
-            session: row.session,
-            amount: String(row.amount),
-            calvesAmount: String(row.calvesAmount || '')
-          })
-          setIsModalOpen(true)
-        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
-          <Edit2 size={16} />
-        </button>
-        <button onClick={() => { setSelectedRecord(row); setIsDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
-          <Trash2 size={16} />
-        </button>
-      </div>
-    )}
+    { key: 'Morning', label: 'Morning', render: (val, row) => <SessionCell val={val} row={row} session="Morning" /> },
+    { key: 'Afternoon', label: 'Afternoon', render: (val, row) => <SessionCell val={val} row={row} session="Afternoon" /> },
+    { key: 'Evening', label: 'Evening', render: (val, row) => <SessionCell val={val} row={row} session="Evening" /> },
+    { key: 'totalAmount', label: 'Total', render: (val) => <span className="text-white font-bold">{formatLiters(val)}</span> },
+    { key: 'calvesAmount', label: 'To Calves', render: (val) => formatLiters(val || 0) },
+    { key: 'netAmount', label: 'Net', render: (_, row) => formatLiters((row.totalAmount || 0) - (row.calvesAmount || 0)) },
   ]
 
   return (
@@ -82,7 +126,17 @@ export default function Milk() {
           <h1 className="page-title">Milk Production</h1>
           <p className="text-slate-400 text-sm mt-1">Track daily milking sessions, calves consumption, and revenue.</p>
         </div>
-        <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Yield</button>
+        <div className="flex flex-wrap items-center gap-3 mt-4 sm:mt-0">
+          <input 
+             type="date" 
+             className="input-field bg-white/5 border-white/10" 
+             value={selectedDateFilter}
+             onChange={e => setSelectedDateFilter(e.target.value)}
+             title="Select Date"
+             required
+          />
+          <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Yield</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -155,7 +209,15 @@ export default function Milk() {
       </div>
 
       <div className="glass-card p-5">
-        <DataTable columns={columns} data={enhancedRecords} pageSize={10} />
+        <h3 className="text-xl font-display font-semibold text-white mb-4 pb-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          {selectedDateFilter ? format(new Date(selectedDateFilter), 'EEEE, dd MMMM yyyy') : 'All Dates'}
+        </h3>
+        <DataTable 
+          columns={columns} 
+          data={pivotedData} 
+          pageSize={15} 
+          emptyMessage={`No records for ${selectedDateFilter ? format(new Date(selectedDateFilter), 'dd MMM yyyy') : 'selected date'}`} 
+        />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setFormData(initialForm) }} title={editingRecord ? "Edit Milk Yield" : "Add Milk Yield"}>
