@@ -78,6 +78,31 @@ export default function Milk() {
     setIsModalOpen(true)
   }
 
+  const editSessionRecord = (row, session) => {
+    setEditingRow(row)
+    const existingRecord = row.records[session]
+    if (existingRecord) {
+      setEditingRecord(existingRecord)
+      setFormData({
+        animalId: existingRecord.animalId,
+        date: existingRecord.date,
+        session: session,
+        amount: String(existingRecord.amount),
+        calvesAmount: String(existingRecord.calvesAmount || '')
+      })
+    } else {
+      setEditingRecord(null)
+      setFormData({
+        animalId: row.animalId,
+        date: selectedDateFilter,
+        session: session,
+        amount: '',
+        calvesAmount: ''
+      })
+    }
+    setIsModalOpen(true)
+  }
+
   const handleSessionChange = (e) => {
     const session = e.target.value
     const existingRecord = editingRow?.records?.[session]
@@ -100,9 +125,19 @@ export default function Milk() {
     }
   }
 
-  const SessionCell = ({ val }) => (
-    <span className={val > 0 ? 'text-white font-medium' : 'text-slate-500'}>{val > 0 ? formatLiters(val) : '—'}</span>
-  )
+  const SessionCell = ({ val, row, session }) => {
+    if (val > 0) {
+      return <span className="text-white font-medium">{formatLiters(val)}</span>
+    }
+    return (
+      <button 
+        onClick={() => editSessionRecord(row, session)} 
+        className="text-xs text-slate-500 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors flex items-center gap-1"
+      >
+        <Plus size={12} /> Add
+      </button>
+    )
+  }
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -122,9 +157,9 @@ export default function Milk() {
     { key: 'tagNumber', label: 'Cow', render: (val, row) => (
       <div><p className="font-medium text-white">{val}</p><p className="text-xs text-slate-400">{row.animalName}</p></div>
     )},
-    { key: 'Morning', label: 'Morning', render: (val) => <SessionCell val={val} /> },
-    { key: 'Afternoon', label: 'Afternoon', render: (val) => <SessionCell val={val} /> },
-    { key: 'Evening', label: 'Evening', render: (val) => <SessionCell val={val} /> },
+    { key: 'Morning', label: 'Morning', render: (val, row) => <SessionCell val={val} row={row} session="Morning" /> },
+    { key: 'Afternoon', label: 'Afternoon', render: (val, row) => <SessionCell val={val} row={row} session="Afternoon" /> },
+    { key: 'Evening', label: 'Evening', render: (val, row) => <SessionCell val={val} row={row} session="Evening" /> },
     { key: 'totalAmount', label: 'Total', render: (val) => <span className="text-white font-bold">{formatLiters(val)}</span> },
     { key: 'calvesAmount', label: 'To Calves', render: (val) => formatLiters(val || 0) },
     { key: 'netAmount', label: 'Net', render: (_, row) => formatLiters((row.totalAmount || 0) - (row.calvesAmount || 0)) },
@@ -239,12 +274,12 @@ export default function Milk() {
         />
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }} title={editingRow ? "Edit Milk Yield" : "Add Milk Yield"}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }} title={editingRow && formData.animalId ? `Edit Yield: ${animals.find(a => String(a.id) === String(formData.animalId))?.tagNumber || 'Cow'}` : "Add Milk Yield"}>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-400 mb-1">Cow *</label>
-              <select required className="input-field" value={formData.animalId} onChange={e => setFormData({...formData, animalId: e.target.value})}>
+              <select required className="input-field disabled:opacity-50" value={formData.animalId} onChange={e => setFormData({...formData, animalId: e.target.value})} disabled={!!editingRow}>
                 <option value="">Select Milking Cow...</option>
                 {animals.filter(a => a.gender === 'Female').map(a => <option key={a.id} value={a.id}>{a.tagNumber} ({a.name || 'Unnamed'})</option>)}
               </select>
