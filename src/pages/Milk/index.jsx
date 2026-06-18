@@ -15,8 +15,7 @@ export default function Milk() {
   const { animals, loadAnimals } = useAnimalStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
-  const [selectedRecord, setSelectedRecord] = useState(null)
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [editingRow, setEditingRow] = useState(null)
 
   const initialForm = { animalId: '', date: format(new Date(), 'yyyy-MM-dd'), session: 'Morning', amount: '', calvesAmount: '' }
   const [formData, setFormData] = useState(initialForm)
@@ -54,14 +53,15 @@ export default function Milk() {
 
   const pivotedData = Object.values(cowMap)
 
-  const editSessionRecord = (row, session) => {
-    const existingRecord = row.records[session]
+  const editRowRecord = (row) => {
+    setEditingRow(row)
+    const existingRecord = row.records['Morning']
     if (existingRecord) {
       setEditingRecord(existingRecord)
       setFormData({
         animalId: existingRecord.animalId,
         date: existingRecord.date,
-        session: existingRecord.session,
+        session: 'Morning',
         amount: String(existingRecord.amount),
         calvesAmount: String(existingRecord.calvesAmount || '')
       })
@@ -70,7 +70,7 @@ export default function Milk() {
       setFormData({
         animalId: row.animalId,
         date: selectedDateFilter,
-        session: session,
+        session: 'Morning',
         amount: '',
         calvesAmount: ''
       })
@@ -78,20 +78,30 @@ export default function Milk() {
     setIsModalOpen(true)
   }
 
-  const SessionCell = ({ val, row, session }) => (
-    <div className="flex items-center justify-between group">
-      <span className={val > 0 ? 'text-white font-medium' : 'text-slate-500'}>{val > 0 ? formatLiters(val) : '—'}</span>
-      <div className="flex gap-1 transition-opacity">
-        <button onClick={() => editSessionRecord(row, session)} className="p-1 text-slate-400 hover:text-white" title={val > 0 ? "Edit" : "Add"}>
-          {val > 0 ? <Edit2 size={12} /> : <Plus size={12} />}
-        </button>
-        {val > 0 && (
-           <button onClick={() => { setSelectedRecord(row.records[session]); setIsDeleteOpen(true) }} className="p-1 text-slate-400 hover:text-red-400" title="Delete">
-             <Trash2 size={12} />
-           </button>
-        )}
-      </div>
-    </div>
+  const handleSessionChange = (e) => {
+    const session = e.target.value
+    const existingRecord = editingRow?.records?.[session]
+    if (existingRecord) {
+      setEditingRecord(existingRecord)
+      setFormData({
+        ...formData,
+        session,
+        amount: String(existingRecord.amount),
+        calvesAmount: String(existingRecord.calvesAmount || '')
+      })
+    } else {
+      setEditingRecord(null)
+      setFormData({
+        ...formData,
+        session,
+        amount: '',
+        calvesAmount: ''
+      })
+    }
+  }
+
+  const SessionCell = ({ val }) => (
+    <span className={val > 0 ? 'text-white font-medium' : 'text-slate-500'}>{val > 0 ? formatLiters(val) : '—'}</span>
   )
 
   const handleSave = async (e) => {
@@ -104,6 +114,7 @@ export default function Milk() {
     }
     setIsModalOpen(false)
     setEditingRecord(null)
+    setEditingRow(null)
     setFormData(initialForm)
   }
 
@@ -111,12 +122,17 @@ export default function Milk() {
     { key: 'tagNumber', label: 'Cow', render: (val, row) => (
       <div><p className="font-medium text-white">{val}</p><p className="text-xs text-slate-400">{row.animalName}</p></div>
     )},
-    { key: 'Morning', label: 'Morning', render: (val, row) => <SessionCell val={val} row={row} session="Morning" /> },
-    { key: 'Afternoon', label: 'Afternoon', render: (val, row) => <SessionCell val={val} row={row} session="Afternoon" /> },
-    { key: 'Evening', label: 'Evening', render: (val, row) => <SessionCell val={val} row={row} session="Evening" /> },
+    { key: 'Morning', label: 'Morning', render: (val) => <SessionCell val={val} /> },
+    { key: 'Afternoon', label: 'Afternoon', render: (val) => <SessionCell val={val} /> },
+    { key: 'Evening', label: 'Evening', render: (val) => <SessionCell val={val} /> },
     { key: 'totalAmount', label: 'Total', render: (val) => <span className="text-white font-bold">{formatLiters(val)}</span> },
     { key: 'calvesAmount', label: 'To Calves', render: (val) => formatLiters(val || 0) },
     { key: 'netAmount', label: 'Net', render: (_, row) => formatLiters((row.totalAmount || 0) - (row.calvesAmount || 0)) },
+    { key: 'actions', label: 'Action', sortable: false, render: (_, row) => (
+      <button onClick={() => editRowRecord(row)} className="btn-secondary px-3 py-1.5 text-xs text-white flex items-center gap-2">
+        <Edit2 size={14} /> Edit
+      </button>
+    )},
   ]
 
   return (
@@ -135,7 +151,7 @@ export default function Milk() {
              title="Select Date"
              required
           />
-          <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Yield</button>
+          <button className="btn-primary" onClick={() => { setEditingRow(null); setEditingRecord(null); setFormData(initialForm); setIsModalOpen(true) }}><Plus size={16} /> Add Yield</button>
         </div>
       </div>
 
@@ -223,7 +239,7 @@ export default function Milk() {
         />
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setFormData(initialForm) }} title={editingRecord ? "Edit Milk Yield" : "Add Milk Yield"}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }} title={editingRow ? "Edit Milk Yield" : "Add Milk Yield"}>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -236,7 +252,7 @@ export default function Milk() {
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Session *</label>
-              <select required className="input-field" value={formData.session} onChange={e => setFormData({...formData, session: e.target.value})}>
+              <select required className="input-field" value={formData.session} onChange={editingRow ? handleSessionChange : e => setFormData({...formData, session: e.target.value})}>
                 <option>Morning</option><option>Afternoon</option><option>Evening</option>
               </select>
             </div>
@@ -244,13 +260,11 @@ export default function Milk() {
             <div className="col-span-1"><label className="block text-xs font-medium text-slate-400 mb-1">Given to Calves (L)</label><input type="number" step="0.1" className="input-field" value={formData.calvesAmount} onChange={e => setFormData({...formData, calvesAmount: e.target.value})} /></div>
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-            <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setEditingRecord(null); setFormData(initialForm) }}>Cancel</button>
+            <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }}>Cancel</button>
             <button type="submit" className="btn-primary">Save Record</button>
           </div>
         </form>
       </Modal>
-
-      <ConfirmDialog isOpen={isDeleteOpen} onClose={() => setIsDeleteOpen(false)} onConfirm={() => { if(selectedRecord) deleteRecord(selectedRecord.id) }} title="Delete Milk Yield Record?" message={`Are you sure you want to permanently delete this milk yield record?`} />
     </div>
   )
 }
