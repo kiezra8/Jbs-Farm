@@ -28,6 +28,21 @@ export default function Milk() {
   const recordsForDate = records.filter(r => r.date === selectedDateFilter)
 
   const cowMap = {}
+  
+  animals.filter(a => a.gender === 'Female').forEach(a => {
+    cowMap[a.id] = {
+      id: a.id,
+      animalId: a.id,
+      animalName: a.name || 'Unknown',
+      tagNumber: a.tagNumber || 'N/A',
+      Morning: 0,
+      Afternoon: 0,
+      Evening: 0,
+      calvesAmount: 0,
+      totalAmount: 0,
+      records: {}
+    }
+  })
   recordsForDate.forEach(r => {
     if (!cowMap[r.animalId]) {
       const animal = animals.find(a => String(a.id) === String(r.animalId))
