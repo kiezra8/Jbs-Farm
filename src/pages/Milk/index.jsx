@@ -81,7 +81,7 @@ export default function Milk() {
   const SessionCell = ({ val, row, session }) => (
     <div className="flex items-center justify-between group">
       <span className={val > 0 ? 'text-white font-medium' : 'text-slate-500'}>{val > 0 ? formatLiters(val) : '—'}</span>
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex gap-1 transition-opacity">
         <button onClick={() => editSessionRecord(row, session)} className="p-1 text-slate-400 hover:text-white" title={val > 0 ? "Edit" : "Add"}>
           {val > 0 ? <Edit2 size={12} /> : <Plus size={12} />}
         </button>
@@ -154,7 +154,7 @@ export default function Milk() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-rose-500">
           <div><p className="text-xs text-slate-400">Given to Calves Today</p><p className="text-2xl font-display font-bold text-white">{formatLiters(stats.todayCalves)}</p></div><span className="text-2xl opacity-80">🍼</span>
         </div>
@@ -163,6 +163,9 @@ export default function Milk() {
         </div>
         <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-emerald-500">
           <div><p className="text-xs text-slate-400">Today's Revenue</p><p className="text-xl font-display font-bold text-white">{new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(stats.todayRevenue)}</p></div><span className="text-2xl opacity-80">💰</span>
+        </div>
+        <div className="glass-card p-4 flex items-center justify-between border-l-2 border-l-indigo-500">
+          <div><p className="text-xs text-slate-400">Month's Revenue</p><p className="text-xl font-display font-bold text-white">{new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(stats.monthRevenue)}</p></div><span className="text-2xl opacity-80">💎</span>
         </div>
       </div>
 

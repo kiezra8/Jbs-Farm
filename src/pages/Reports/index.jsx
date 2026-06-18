@@ -49,6 +49,7 @@ export default function Reports() {
           morning: 0,
           afternoon: 0,
           evening: 0,
+          calvesAmount: 0,
           totalAmount: 0
         }
       }
@@ -56,16 +57,24 @@ export default function Reports() {
       if (r.session === 'Morning') row.morning += (r.amount || 0)
       if (r.session === 'Afternoon') row.afternoon += (r.amount || 0)
       if (r.session === 'Evening') row.evening += (r.amount || 0)
+      row.calvesAmount += (r.calvesAmount || 0)
       row.totalAmount += (r.amount || 0)
     })
 
-    const rows = Object.values(pivotedRowsMap).map(row => ({
-      ...row,
-      morning: row.morning > 0 ? `${row.morning} L` : '—',
-      afternoon: row.afternoon > 0 ? `${row.afternoon} L` : '—',
-      evening: row.evening > 0 ? `${row.evening} L` : '—',
-      totalAmount: `${row.totalAmount} L`
-    }))
+    const rows = Object.values(pivotedRowsMap).map(row => {
+      const netAmount = row.totalAmount - row.calvesAmount
+      const revenue = netAmount * 1500
+      return {
+        ...row,
+        morning: row.morning > 0 ? `${row.morning} L` : '—',
+        afternoon: row.afternoon > 0 ? `${row.afternoon} L` : '—',
+        evening: row.evening > 0 ? `${row.evening} L` : '—',
+        totalAmount: `${row.totalAmount} L`,
+        calvesAmount: `${row.calvesAmount} L`,
+        netAmount: `${netAmount} L`,
+        revenue: new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(revenue)
+      }
+    })
 
     const pdfColumns = [
       { key: 'animalTag', header: 'Cow Tag' },
@@ -73,7 +82,10 @@ export default function Reports() {
       { key: 'morning', header: 'Morning' },
       { key: 'afternoon', header: 'Afternoon' },
       { key: 'evening', header: 'Evening' },
-      { key: 'totalAmount', header: 'Total' }
+      { key: 'totalAmount', header: 'Total' },
+      { key: 'calvesAmount', header: 'Calves' },
+      { key: 'netAmount', header: 'Net' },
+      { key: 'revenue', header: 'Revenue' }
     ]
 
     if (type === 'pdf') {

@@ -71,6 +71,10 @@ export const useMilkStore = create((set, get) => ({
     const todayNet = todayTotal - todayCalves
     const todayRevenue = todayNet * 1500
 
-    return { todayTotal, yesterdayTotal, change: Number(change), monthTotal, todayCalves, todayNet, todayRevenue }
+    const monthCalves = records.reduce((sum, r) => sum + (r.calvesAmount || 0), 0)
+    const monthNet = monthTotal - monthCalves
+    const monthRevenue = monthNet * 1500
+
+    return { todayTotal, yesterdayTotal, change: Number(change), monthTotal, todayCalves, todayNet, todayRevenue, monthRevenue }
   },
 }))
