@@ -9,7 +9,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { QRCodeSVG } from 'qrcode.react'
 
 export default function Animals() {
-  const { loadAnimals, getFilteredAnimals, getStats, setSearchQuery, searchQuery, filters, setFilter, deleteAnimal, addAnimal, updateAnimal } = useAnimalStore()
+  const { animals, loadAnimals, getFilteredAnimals, getStats, setSearchQuery, searchQuery, filters, setFilter, deleteAnimal, addAnimal, updateAnimal } = useAnimalStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isQRModalOpen, setIsQRModalOpen] = useState(false)
   const [selectedAnimal, setSelectedAnimal] = useState(null)
