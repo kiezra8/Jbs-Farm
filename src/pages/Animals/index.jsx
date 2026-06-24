@@ -15,6 +15,7 @@ export default function Animals() {
   const [selectedAnimal, setSelectedAnimal] = useState(null)
   const [editingAnimal, setEditingAnimal] = useState(null)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isSickModalOpen, setIsSickModalOpen] = useState(false)
 
   const initialForm = {
     tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: 'Healthy', weight: '', age: '', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: ''
@@ -126,7 +127,7 @@ export default function Animals() {
           <div><p className="text-xs text-slate-400">Bulls</p><p className="text-2xl font-display font-bold text-white">{stats.bulls}</p></div>
           <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center"><span className="text-blue-400 text-sm">♂</span></div>
         </div>
-        <div className="glass-card p-4 flex items-center justify-between">
+        <div className="glass-card p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors border-l-2 border-l-transparent hover:border-l-red-500" onClick={() => setIsSickModalOpen(true)}>
           <div><p className="text-xs text-slate-400">Sick</p><p className="text-2xl font-display font-bold text-white">{stats.sick}</p></div>
           <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center"><span className="text-red-400 text-sm">!</span></div>
         </div>
@@ -208,6 +209,48 @@ export default function Animals() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal isOpen={isSickModalOpen} onClose={() => setIsSickModalOpen(false)} title="Manage Sick Animals">
+        <div className="space-y-4">
+          <div className="bg-white/5 p-4 rounded-xl border border-white/10 flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Mark Animal as Sick</label>
+              <select className="input-field" onChange={(e) => {
+                if(e.target.value) {
+                  updateAnimal(e.target.value, { status: 'Sick' });
+                  e.target.value = '';
+                }
+              }}>
+                <option value="">Select a healthy animal...</option>
+                {animals.filter(a => a.status !== 'Sick').map(a => (
+                  <option key={a.id} value={a.id}>{a.tagNumber} ({a.name || 'Unnamed'})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+            {animals.filter(a => a.status === 'Sick').length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-4">No sick animals currently.</p>
+            ) : (
+              animals.filter(a => a.status === 'Sick').map(a => (
+                <div key={a.id} className="flex items-center justify-between bg-white/5 p-3 rounded-lg border border-red-500/20">
+                  <div>
+                    <p className="text-white font-medium">{a.tagNumber}</p>
+                    <p className="text-xs text-slate-400">{a.name || 'Unnamed'}</p>
+                  </div>
+                  <button 
+                    onClick={() => updateAnimal(a.id, { status: 'Healthy' })}
+                    className="px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-sm hover:bg-green-500/30 transition-colors"
+                  >
+                    Mark Healthy
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog isOpen={isDeleteOpen} onClose={() => setIsDeleteOpen(false)} onConfirm={() => { if(selectedAnimal) deleteAnimal(selectedAnimal.id) }} title="Delete Animal Record?" message={`Are you sure you want to permanently delete the record for ${selectedAnimal?.tagNumber}?`} />

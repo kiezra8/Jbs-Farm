@@ -66,7 +66,11 @@ export default function Milk() {
     row.records[r.session] = r
   })
 
-  const pivotedData = Object.values(cowMap)
+  const pivotedData = Object.values(cowMap).sort((a, b) => {
+    if (a.totalAmount > 0 && b.totalAmount === 0) return -1;
+    if (a.totalAmount === 0 && b.totalAmount > 0) return 1;
+    return b.totalAmount - a.totalAmount;
+  })
 
   const editRowRecord = (row) => {
     setEditingRow(row)
@@ -235,6 +239,18 @@ export default function Milk() {
         </div>
       </div>
 
+      <div className="glass-card p-5">
+        <h3 className="text-xl font-display font-semibold text-white mb-4 pb-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          {selectedDateFilter ? format(new Date(selectedDateFilter), 'EEEE, dd MMMM yyyy') : 'All Dates'}
+        </h3>
+        <DataTable 
+          columns={columns} 
+          data={pivotedData} 
+          pageSize={15} 
+          emptyMessage={`No records for ${selectedDateFilter ? format(new Date(selectedDateFilter), 'dd MMM yyyy') : 'selected date'}`} 
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-card p-5">
           <h3 className="text-sm font-medium text-slate-400 mb-4">Daily Milk Production (Liters)</h3>
@@ -275,18 +291,6 @@ export default function Milk() {
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
-
-      <div className="glass-card p-5">
-        <h3 className="text-xl font-display font-semibold text-white mb-4 pb-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          {selectedDateFilter ? format(new Date(selectedDateFilter), 'EEEE, dd MMMM yyyy') : 'All Dates'}
-        </h3>
-        <DataTable 
-          columns={columns} 
-          data={pivotedData} 
-          pageSize={15} 
-          emptyMessage={`No records for ${selectedDateFilter ? format(new Date(selectedDateFilter), 'dd MMM yyyy') : 'selected date'}`} 
-        />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }} title={editingRow && formData.animalId ? `Edit Yield: ${animals.find(a => String(a.id) === String(formData.animalId))?.tagNumber || 'Cow'}` : "Add Milk Yield"}>
