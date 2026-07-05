@@ -20,6 +20,7 @@ import Analytics from './pages/Analytics'
 import Reports from './pages/Reports'
 import Notifications from './pages/Notifications'
 import Settings from './pages/Settings'
+import Sacco from './pages/Sacco'
 
 // Protected Route Wrapper
 const ProtectedRoute = () => {
@@ -63,6 +64,7 @@ function App() {
           <Route path="/milk" element={<Milk />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/finance" element={<Finance />} />
+          <Route path="/sacco" element={<Sacco />} />
           <Route path="/staff" element={<Staff />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/reports" element={<Reports />} />

@@ -1,0 +1,1010 @@
+import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank } from 'lucide-react'
+import { useSaccoStore } from '../../store/useSaccoStore'
+import DataTable from '../../components/ui/DataTable'
+import Modal from '../../components/ui/Modal'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
+import { formatUGX } from '../../utils/formatters'
+import { format } from 'date-fns'
+import * as XLSX from 'xlsx'
+
+export default function Sacco() {
+  const { 
+    members, 
+    shares, 
+    investors, 
+    transactions, 
+    savings,
+    loading, 
+    loadSaccoData, 
+    addMember, 
+    updateMember, 
+    deleteMember, 
+    updateShares, 
+    updateSavings,
+    convertSavingsToShares,
+    updateInvestor, 
+    addTransaction, 
+    deleteTransaction,
+    importFromExcel,
+    getFinancials 
+  } = useSaccoStore()
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') || 'members'
+  const setActiveTab = (tab) => setSearchParams({ tab })
+  
+  // Modals state
+  const [isMemberModalOpen, setIsMemberModalOpen] = useState(false)
+  const [isSharesModalOpen, setIsSharesModalOpen] = useState(false)
+  const [isSavingsModalOpen, setIsSavingsModalOpen] = useState(false)
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false)
+  const [isInvestorModalOpen, setIsInvestorModalOpen] = useState(false)
+  const [isTxModalOpen, setIsTxModalOpen] = useState(false)
+  
+  const [editingMember, setEditingMember] = useState(null)
+  const [editingSharesMember, setEditingSharesMember] = useState(null)
+  const [editingSavingsMember, setEditingSavingsMember] = useState(null)
+  const [editingConvertMember, setEditingConvertMember] = useState(null)
+  const [editingInvestor, setEditingInvestor] = useState(null)
+  
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isTxDeleteOpen, setIsTxDeleteOpen] = useState(false)
+  const [selectedItem, setSelectedItem] = useState(null)
+  
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+
+  // Form states
+  const initialMemberForm = { name: '', phone: '', nin: '', category: 'Saving Member', photo: '' }
+  const [memberForm, setMemberForm] = useState(initialMemberForm)
+  
+  const [shareCountInput, setShareCountInput] = useState('1')
+  
+  // Savings states
+  const [savingsInput, setSavingsInput] = useState('0')
+  const [savingsMode, setSavingsMode] = useState('deposit') // deposit, withdraw
+  
+  // Convert states
+  const [convertSharesInput, setConvertSharesInput] = useState('1')
+  
+  // Investor Form states
+  const initialInvestorForm = { category: 'Money Maker', investmentAmount: '8000000', cowsPerYear: '0' }
+  const [investorForm, setInvestorForm] = useState(initialInvestorForm)
+  
+  const initialTxForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Income', source: 'Bank', category: 'Share Purchase', amount: '', description: '' }
+  const [txForm, setTxForm] = useState(initialTxForm)
+
+  const excelInputRef = useRef(null)
+
+  useEffect(() => {
+    loadSaccoData()
+  }, [])
+
+  // ─── Financial Calculations ────────────────────────────────────────────────
+  const financials = getFinancials()
+
+  // ─── Photo Upload handler ──────────────────────────────────────────────────
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setMemberForm(prev => ({ ...prev, photo: reader.result }))
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  // ─── Excel Import handler ──────────────────────────────────────────────────
+  const handleExcelImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json(ws)
+        
+        // expected keys in excel: Name, Phone, NIN, Category, Shares, Savings, InvestmentAmount
+        if (data.length > 0) {
+          await importFromExcel(data)
+          alert(`Successfully imported ${data.length} SACCO records!`)
+        } else {
+          alert('Excel file is empty.')
+        }
+      } catch (err) {
+        console.error('Import failed:', err)
+        alert('Failed to parse excel file. Make sure columns match: Name, Phone, NIN, Category, Shares, Savings, InvestmentAmount')
+      }
+      e.target.value = null // reset
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  // ─── Save Handlers ────────────────────────────────────────────────────────
+  const handleSaveMember = async (e) => {
+    e.preventDefault()
+    if (editingMember) {
+      await updateMember(editingMember.id, memberForm)
+    } else {
+      await addMember(memberForm)
+    }
+    setIsMemberModalOpen(false)
+    setEditingMember(null)
+    setMemberForm(initialMemberForm)
+  }
+
+  const handleSaveShares = async (e) => {
+    e.preventDefault()
+    if (editingSharesMember) {
+      await updateShares(editingSharesMember.id, shareCountInput)
+    }
+    setIsSharesModalOpen(false)
+    setEditingSharesMember(null)
+  }
+
+  const handleSaveSavings = async (e) => {
+    e.preventDefault()
+    if (editingSavingsMember) {
+      const current = savings.find(s => s.memberId === editingSavingsMember.id)?.savingAmount || 0
+      const delta = Number(savingsInput) || 0
+      const finalAmount = savingsMode === 'deposit' ? current + delta : Math.max(0, current - delta)
+      
+      await updateSavings(editingSavingsMember.id, finalAmount)
+      
+      // Log transaction
+      await addTransaction({
+        date: format(new Date(), 'yyyy-MM-dd'),
+        type: savingsMode === 'deposit' ? 'Income' : 'Expense',
+        source: 'Bank',
+        category: 'Membership Fee',
+        amount: delta,
+        description: `${savingsMode === 'deposit' ? 'Deposited' : 'Withdrew'} savings for ${editingSavingsMember.name}`
+      })
+    }
+    setIsSavingsModalOpen(false)
+    setEditingSavingsMember(null)
+  }
+
+  const handleSaveConvert = async (e) => {
+    e.preventDefault()
+    if (editingConvertMember) {
+      const res = await convertSavingsToShares(editingConvertMember.id, convertSharesInput)
+      if (res.success) {
+        alert('Conversion successful!')
+      } else {
+        alert(res.error || 'Conversion failed.')
+      }
+    }
+    setIsConvertModalOpen(false)
+    setEditingConvertMember(null)
+  }
+
+  const handleSaveInvestor = async (e) => {
+    e.preventDefault()
+    if (editingInvestor) {
+      await updateInvestor(editingInvestor.id, {
+        category: investorForm.category,
+        investmentAmount: Number(investorForm.investmentAmount) || 8000000,
+        cowsPerYear: Number(investorForm.cowsPerYear) || 0
+      })
+    }
+    setIsInvestorModalOpen(false)
+    setEditingInvestor(null)
+  }
+
+  const handleSaveTx = async (e) => {
+    e.preventDefault()
+    await addTransaction(txForm)
+    setIsTxModalOpen(false)
+    setTxForm(initialTxForm)
+  }
+
+  // ─── Tables Data Preparation ───────────────────────────────────────────────
+  const filteredMembers = members.filter(m => {
+    const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          m.phone?.includes(searchQuery) || 
+                          m.nin?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesCategory = categoryFilter ? m.category === categoryFilter : true
+    return matchesSearch && matchesCategory
+  })
+
+  const sharesData = members.map(m => {
+    const shareObj = shares.find(s => s.memberId === m.id)
+    const count = shareObj?.shareCount || 1 // Minimum 1 share enforced
+    return {
+      id: m.id,
+      name: m.name,
+      category: m.category,
+      shareCount: count,
+      value: count * 100000
+    }
+  }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const savingsData = members.map(m => {
+    const savingObj = savings.find(s => s.memberId === m.id)
+    const count = savingObj?.savingAmount || 0
+    return {
+      id: m.id,
+      name: m.name,
+      category: m.category,
+      savingAmount: count
+    }
+  }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const investorsData = investors.map(i => {
+    const member = members.find(m => m.id === i.memberId)
+    return {
+      ...i,
+      name: member?.name || 'Unknown',
+      memberCategory: member?.category || 'Investor'
+    }
+  }).filter(i => i.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const txData = [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date))
+
+  // ─── Table Columns ─────────────────────────────────────────────────────────
+  const memberColumns = [
+    { key: 'photo', label: 'Photo', sortable: false, render: (val, row) => (
+      <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+        {val ? (
+          <img src={val} alt={row.name} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-sm font-semibold text-slate-400">{row.name?.[0]?.toUpperCase()}</span>
+        )}
+      </div>
+    )},
+    { key: 'name', label: 'Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'phone', label: 'Phone' },
+    { key: 'nin', label: 'NIN' },
+    { key: 'category', label: 'Category', render: (val) => {
+      const colors = {
+        'Pioneer': 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+        'Investor': 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
+        'Saving Member': 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+      }
+      return <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[val] || 'bg-slate-500/10 text-slate-400'}`}>{val}</span>
+    }},
+    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      <div className="flex items-center gap-2">
+        <button onClick={() => {
+          setEditingMember(row)
+          setMemberForm({
+            name: row.name || '',
+            phone: row.phone || '',
+            nin: row.nin || '',
+            category: row.category || 'Saving Member',
+            photo: row.photo || ''
+          })
+          setIsMemberModalOpen(true)
+        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
+          <Edit2 size={14} />
+        </button>
+        <button onClick={() => { setSelectedItem(row); setIsDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
+          <Trash2 size={14} />
+        </button>
+      </div>
+    )}
+  ]
+
+  const sharesColumns = [
+    { key: 'name', label: 'Member Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'category', label: 'Category' },
+    { key: 'shareCount', label: 'Shares Owned', render: (val) => <span className="font-bold text-white">{val}</span> },
+    { key: 'value', label: 'Total Value', render: (val) => <span className="text-emerald-400 font-semibold">{formatUGX(val)}</span> },
+    { key: 'actions', label: 'Manage', sortable: false, render: (_, row) => (
+      <button onClick={() => {
+        setEditingSharesMember(row)
+        setShareCountInput(String(row.shareCount))
+        setIsSharesModalOpen(true)
+      }} className="btn-secondary px-2.5 py-1 text-xs text-white flex items-center gap-1">
+        <Coins size={12} /> Adjust Shares
+      </button>
+    )}
+  ]
+
+  const savingsColumns = [
+    { key: 'name', label: 'Member Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'category', label: 'Category' },
+    { key: 'savingAmount', label: 'Savings Balance', render: (val) => <span className="text-blue-400 font-bold">{formatUGX(val)}</span> },
+    { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
+      <div className="flex gap-2">
+        <button onClick={() => {
+          setEditingSavingsMember(row)
+          setSavingsInput('')
+          setSavingsMode('deposit')
+          setIsSavingsModalOpen(true)
+        }} className="btn-secondary px-2 py-1 text-xs text-white flex items-center gap-1 hover:bg-emerald-500/10">
+          <PiggyBank size={12} /> Add/Withdraw
+        </button>
+        <button onClick={() => {
+          setEditingConvertMember(row)
+          setConvertSharesInput('1')
+          setIsConvertModalOpen(true)
+        }} className="btn-secondary px-2 py-1 text-xs text-white flex items-center gap-1 hover:bg-purple-500/10" disabled={row.savingAmount < 100000}>
+          <Coins size={12} /> Convert to Shares
+        </button>
+      </div>
+    )}
+  ]
+
+  const investorsColumns = [
+    { key: 'name', label: 'Investor Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'category', label: 'Category', render: (val) => (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Money Maker' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+        {val}
+      </span>
+    )},
+    { key: 'investmentAmount', label: 'Investment Details', render: (val, row) => {
+      if (row.category === 'Money Maker') {
+        const units = (val || 8000000) / 8000000
+        return (
+          <div>
+            <p className="font-medium text-white">{formatUGX(val || 8000000)}</p>
+            <p className="text-[10px] text-slate-400">({units.toFixed(2)} Units of 8M)</p>
+          </div>
+        )
+      } else {
+        return <span className="text-slate-300">—</span>
+      }
+    }},
+    { key: 'details', label: 'Annual Payout Rate', sortable: false, render: (_, row) => {
+      if (row.category === 'Money Maker') {
+        const units = (row.investmentAmount || 8000000) / 8000000
+        const calculatedPayout = units * 350000
+        return (
+          <div>
+            <p className="text-emerald-400 font-semibold">{formatUGX(calculatedPayout)} / yr</p>
+            <p className="text-[9px] text-slate-500">350K split/multiplied per 8M unit</p>
+          </div>
+        )
+      } else {
+        return <span className="text-indigo-400 font-semibold">{row.cowsPerYear} cows / yr</span>
+      }
+    }},
+    { key: 'projections', label: '5-Year Projections', sortable: false, render: (_, row) => {
+      if (row.category === 'Money Maker') {
+        const units = (row.investmentAmount || 8000000) / 8000000
+        const totalPayout = units * 350000 * 5
+        return <span className="text-emerald-400 font-semibold">{formatUGX(totalPayout)} total</span>
+      } else {
+        const totalCows = (row.cowsPerYear || 0) * 5
+        return <span className="text-indigo-400 font-semibold">{totalCows} cows total</span>
+      }
+    }},
+    { key: 'actions', label: 'Configure', sortable: false, render: (_, row) => (
+      <button onClick={() => {
+        setEditingInvestor(row)
+        setInvestorForm({
+          category: row.category || 'Money Maker',
+          investmentAmount: String(row.investmentAmount || '8000000'),
+          cowsPerYear: String(row.cowsPerYear || '0')
+        })
+        setIsInvestorModalOpen(true)
+      }} className="btn-secondary px-2.5 py-1 text-xs text-white flex items-center gap-1">
+        <Edit2 size={12} /> Configure
+      </button>
+    )}
+  ]
+
+  const txColumns = [
+    { key: 'date', label: 'Date', render: (val) => format(new Date(val), 'dd MMM yyyy') },
+    { key: 'type', label: 'Type', render: (val) => (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${val === 'Income' ? 'bg-green-500/10 text-green-400' : val === 'Expense' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
+        {val}
+      </span>
+    )},
+    { key: 'source', label: 'Source/Destination', render: (val, row) => (
+      <span className="text-slate-300">
+        {val} {row.type === 'Transfer' && <span className="text-xs text-slate-500">({row.source === 'Bank' ? 'Bank → Petty Cash' : 'Petty Cash → Bank'})</span>}
+      </span>
+    )},
+    { key: 'category', label: 'Category' },
+    { key: 'amount', label: 'Amount', render: (val, row) => (
+      <span className={`font-semibold ${row.type === 'Income' ? 'text-green-400' : row.type === 'Expense' ? 'text-red-400' : 'text-blue-400'}`}>
+        {row.type === 'Expense' ? '-' : ''}{formatUGX(val)}
+      </span>
+    )},
+    { key: 'description', label: 'Description', render: (val) => <span className="text-xs text-slate-400 truncate max-w-[150px] block">{val || '—'}</span> },
+    { key: 'actions', label: '', sortable: false, render: (_, row) => (
+      <button onClick={() => { setSelectedItem(row); setIsTxDeleteOpen(true) }} className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400">
+        <Trash2 size={14} />
+      </button>
+    )}
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="page-header flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+            <Building2 className="text-emerald-400" size={24} />
+          </div>
+          <div>
+            <h1 className="page-title text-2xl font-bold text-white">SACCO Management</h1>
+            <p className="text-slate-400 text-sm">Members list, share counting, savings, investor calculations, and accounts ledgers.</p>
+          </div>
+        </div>
+
+        {/* Dynamic header button based on active tab */}
+        {activeTab === 'members' && (
+          <div className="flex gap-2 w-full sm:w-auto">
+            <input 
+              type="file" 
+              ref={excelInputRef} 
+              onChange={handleExcelImport} 
+              accept=".xlsx,.xls,.csv" 
+              className="hidden" 
+            />
+            <button 
+              onClick={() => excelInputRef.current.click()} 
+              className="btn-secondary text-white flex items-center gap-2"
+            >
+              <Upload size={16} /> Import Excel
+            </button>
+            <button 
+              onClick={() => { setEditingMember(null); setMemberForm(initialMemberForm); setIsMemberModalOpen(true) }} 
+              className="btn-primary flex items-center gap-2"
+            >
+              <Plus size={16} /> Add Member
+            </button>
+          </div>
+        )}
+        {activeTab === 'accounts' && (
+          <button 
+            onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} 
+            className="btn-primary flex items-center gap-2 w-full sm:w-auto"
+          >
+            <Plus size={16} /> Add Transaction
+          </button>
+        )}
+      </div>
+
+      {/* Accounts mini summary cards shown on accounts tab */}
+      {activeTab === 'accounts' && (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <div className="glass-card p-4 border-l-2 border-emerald-500">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Money in Bank</p>
+            <p className="text-base font-bold text-white mt-1">{formatUGX(financials.moneyInBank)}</p>
+          </div>
+          <div className="glass-card p-4 border-l-2 border-amber-500">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Petty Cash</p>
+            <p className="text-base font-bold text-white mt-1">{formatUGX(financials.pettyCash)}</p>
+          </div>
+          <div className="glass-card p-4 border-l-2 border-purple-500">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Shares Value</p>
+            <p className="text-base font-bold text-white mt-1">{formatUGX(financials.totalSharesValue)}</p>
+          </div>
+          <div className="glass-card p-4 border-l-2 border-indigo-500">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Total Savings</p>
+            <p className="text-base font-bold text-white mt-1">{formatUGX(financials.totalSavings)}</p>
+          </div>
+          <div className="glass-card p-4 border-l-2 border-red-500">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Total Used</p>
+            <p className="text-base font-bold text-white mt-1">{formatUGX(financials.totalUsed)}</p>
+          </div>
+          <div className="glass-card p-4 border-l-2 border-blue-500 col-span-2 md:col-span-1">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Net Balance</p>
+            <p className="text-base font-bold text-white mt-1">{formatUGX(financials.netBalance)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs Navigation */}
+      <div className="flex border-b border-white/10 overflow-x-auto scrollbar-none">
+        <button 
+          onClick={() => setActiveTab('members')} 
+          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'members' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+        >
+          <Users size={16} /> Members
+        </button>
+        <button 
+          onClick={() => setActiveTab('shares')} 
+          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'shares' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+        >
+          <Coins size={16} /> Share Counting
+        </button>
+        <button 
+          onClick={() => setActiveTab('savings')} 
+          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'savings' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+        >
+          <PiggyBank size={16} /> Savings
+        </button>
+        <button 
+          onClick={() => setActiveTab('investors')} 
+          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'investors' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+        >
+          <TrendingUp size={16} /> Investors Section
+        </button>
+        <button 
+          onClick={() => setActiveTab('accounts')} 
+          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'accounts' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+        >
+          <Wallet size={16} /> Accounts
+        </button>
+      </div>
+
+      {/* Tab Contents */}
+      <div className="space-y-0">
+        {/* Search / Filters Bar (not shown in accounts tab) */}
+        {activeTab !== 'accounts' && (
+          <div className="glass-card p-4 mb-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                <Search size={16} className="text-slate-400 flex-shrink-0" />
+                <input 
+                  type="text" 
+                  placeholder={activeTab === 'members' ? "Search members by name, phone or NIN..." : "Search by member name..."} 
+                  className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500" 
+                  value={searchQuery} 
+                  onChange={(e) => setSearchQuery(e.target.value)} 
+                />
+              </div>
+              
+              {activeTab === 'members' && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                  <Filter size={16} className="text-slate-400" />
+                  <select 
+                    className="bg-transparent border-none outline-none text-sm text-white" 
+                    value={categoryFilter} 
+                    onChange={e => setCategoryFilter(e.target.value)}
+                  >
+                    <option value="">All Categories</option>
+                    <option value="Pioneer">Pioneer</option>
+                    <option value="Investor">Investor</option>
+                    <option value="Saving Member">Saving Member</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab Specific Views */}
+        {activeTab === 'members' && (
+          <DataTable columns={memberColumns} data={filteredMembers} pageSize={10} />
+        )}
+
+        {activeTab === 'shares' && (
+          <DataTable columns={sharesColumns} data={sharesData} pageSize={10} />
+        )}
+
+        {activeTab === 'savings' && (
+          <DataTable columns={savingsColumns} data={savingsData} pageSize={10} />
+        )}
+
+        {activeTab === 'investors' && (
+          <DataTable columns={investorsColumns} data={investorsData} pageSize={10} />
+        )}
+
+        {activeTab === 'accounts' && (
+          <DataTable columns={txColumns} data={txData} pageSize={10} />
+        )}
+      </div>
+
+      {/* Member Form Modal */}
+      <Modal 
+        isOpen={isMemberModalOpen} 
+        onClose={() => setIsMemberModalOpen(false)} 
+        title={editingMember ? "Edit SACCO Member" : "Add New SACCO Member"}
+      >
+        <form onSubmit={handleSaveMember} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 flex flex-col items-center pb-2 border-b border-white/5">
+              <label className="block text-xs font-medium text-slate-400 mb-2">Profile Image</label>
+              <div className="relative group">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+                  {memberForm.photo ? (
+                    <img src={memberForm.photo} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <Users size={32} className="text-slate-500" />
+                  )}
+                </div>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  id="photo-upload" 
+                  onChange={handlePhotoUpload} 
+                  className="hidden" 
+                />
+                <label 
+                  htmlFor="photo-upload" 
+                  className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] text-white font-medium rounded-2xl cursor-pointer transition-opacity"
+                >
+                  Upload
+                </label>
+              </div>
+            </div>
+            
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Full Name *</label>
+              <input 
+                required 
+                type="text" 
+                className="input-field" 
+                placeholder="e.g. John Doe"
+                value={memberForm.name} 
+                onChange={e => setMemberForm({ ...memberForm, name: e.target.value })} 
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Phone Number</label>
+              <input 
+                type="tel" 
+                className="input-field" 
+                placeholder="e.g. +25670..."
+                value={memberForm.phone} 
+                onChange={e => setMemberForm({ ...memberForm, phone: e.target.value })} 
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">NIN (National ID)</label>
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder="e.g. CM123..."
+                value={memberForm.nin} 
+                onChange={e => setMemberForm({ ...memberForm, nin: e.target.value })} 
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Category *</label>
+              <select 
+                required 
+                className="input-field" 
+                value={memberForm.category} 
+                onChange={e => setMemberForm({ ...memberForm, category: e.target.value })}
+              >
+                <option value="Saving Member">Saving Member</option>
+                <option value="Pioneer">Pioneer</option>
+                <option value="Investor">Investor</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+            <button type="button" className="btn-secondary" onClick={() => setIsMemberModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Member</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Adjust Shares Modal */}
+      <Modal 
+        isOpen={isSharesModalOpen} 
+        onClose={() => setIsSharesModalOpen(false)} 
+        title={`Adjust Shares: ${editingSharesMember?.name}`}
+        size="sm"
+      >
+        <form onSubmit={handleSaveShares} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Number of Shares *</label>
+            <input 
+              required 
+              type="number" 
+              min="1" 
+              className="input-field font-bold text-lg text-white" 
+              value={shareCountInput} 
+              onChange={e => setShareCountInput(e.target.value)} 
+            />
+            <p className="text-xs text-slate-500 mt-1">Minimum 1 share is required. Each share costs <span className="text-slate-300 font-medium">UGX 100,000</span>.</p>
+          </div>
+
+          <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl flex items-center justify-between">
+            <span className="text-xs font-medium text-emerald-400">Total Value:</span>
+            <span className="text-sm font-bold text-white">{formatUGX((Number(shareCountInput) || 1) * 100000)}</span>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+            <button type="button" className="btn-secondary" onClick={() => setIsSharesModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Update Shares</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Deposit/Withdraw Savings Modal */}
+      <Modal
+        isOpen={isSavingsModalOpen}
+        onClose={() => setIsSavingsModalOpen(false)}
+        title={`Manage Savings: ${editingSavingsMember?.name}`}
+        size="sm"
+      >
+        <form onSubmit={handleSaveSavings} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-2">Operation Type</label>
+            <div className="flex gap-2">
+              <button 
+                type="button"
+                onClick={() => setSavingsMode('deposit')}
+                className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${savingsMode === 'deposit' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'}`}
+              >
+                Deposit Savings
+              </button>
+              <button 
+                type="button"
+                onClick={() => setSavingsMode('withdraw')}
+                className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${savingsMode === 'withdraw' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'}`}
+              >
+                Withdraw Savings
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Amount (UGX) *</label>
+            <input 
+              required 
+              type="number" 
+              min="1" 
+              placeholder="e.g. 50000"
+              className="input-field text-white font-bold" 
+              value={savingsInput} 
+              onChange={e => setSavingsInput(e.target.value)} 
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+            <button type="button" className="btn-secondary" onClick={() => setIsSavingsModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Changes</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Convert Savings to Shares Modal */}
+      <Modal
+        isOpen={isConvertModalOpen}
+        onClose={() => setIsConvertModalOpen(false)}
+        title={`Convert Savings to Shares: ${editingConvertMember?.name}`}
+        size="sm"
+      >
+        <form onSubmit={handleSaveConvert} className="space-y-4">
+          <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-1">
+            <p className="text-xs text-slate-400">Available Savings:</p>
+            <p className="text-lg font-bold text-blue-400">{formatUGX(editingConvertMember?.savingAmount || 0)}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Number of Shares to Purchase</label>
+            <input 
+              required 
+              type="number" 
+              min="1" 
+              max={Math.floor((editingConvertMember?.savingAmount || 0) / 100000)}
+              className="input-field font-bold text-white text-lg" 
+              value={convertSharesInput} 
+              onChange={e => setConvertSharesInput(e.target.value)} 
+            />
+            <p className="text-xs text-slate-500 mt-1">Each share costs <span className="text-slate-300 font-medium">UGX 100,000</span>.</p>
+          </div>
+
+          <div className="bg-purple-500/10 border border-purple-500/20 p-3 rounded-xl space-y-2">
+            <div className="flex justify-between text-xs">
+              <span className="text-purple-400">Cost:</span>
+              <span className="text-white font-semibold">{(Number(convertSharesInput) * 100000).toLocaleString()} UGX</span>
+            </div>
+            <div className="flex justify-between text-xs border-t border-white/5 pt-2">
+              <span className="text-purple-400">Remaining Savings:</span>
+              <span className="text-slate-300 font-semibold">{Math.max(0, (editingConvertMember?.savingAmount || 0) - (Number(convertSharesInput) * 100000)).toLocaleString()} UGX</span>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+            <button type="button" className="btn-secondary" onClick={() => setIsConvertModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary bg-purple-600 hover:bg-purple-700">Convert Now</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Configure Investor Modal */}
+      <Modal 
+        isOpen={isInvestorModalOpen} 
+        onClose={() => setIsInvestorModalOpen(false)} 
+        title={`Configure Investor Settings: ${editingInvestor?.name}`}
+      >
+        <form onSubmit={handleSaveInvestor} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Investor Category</label>
+            <select 
+              className="input-field" 
+              value={investorForm.category} 
+              onChange={e => setInvestorForm({ ...investorForm, category: e.target.value })}
+            >
+              <option value="Money Maker">Money Maker</option>
+              <option value="New Farmer">New Farmer</option>
+            </select>
+          </div>
+
+          {investorForm.category === 'Money Maker' ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Investment Amount (UGX) *</label>
+                <input 
+                  required 
+                  type="number" 
+                  className="input-field font-bold text-white" 
+                  value={investorForm.investmentAmount} 
+                  onChange={e => setInvestorForm({ ...investorForm, investmentAmount: e.target.value })} 
+                />
+                <p className="text-xs text-slate-500 mt-1">One unit of investment is <span className="text-slate-300 font-medium">UGX 8,000,000</span>.</p>
+              </div>
+
+              <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-400">Total Investment Units:</span>
+                  <span className="text-white font-bold">{((Number(investorForm.investmentAmount) || 8000000) / 8000000).toFixed(2)} Units</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-white/5 pt-2">
+                  <span className="text-emerald-400 font-medium">Annual Payout (350K/Unit):</span>
+                  <span className="text-emerald-400 font-bold">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 8000000) / 8000000) * 350000))} / yr</span>
+                </div>
+              </div>
+
+              <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl flex items-center justify-between">
+                <span className="text-xs font-medium text-emerald-400">5-Year Projection Payout:</span>
+                <span className="text-sm font-bold text-white">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 8000000) / 8000000) * 350000 * 5))}</span>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Number of Cows Received Every Year *</label>
+              <input 
+                required 
+                type="number" 
+                className="input-field" 
+                value={investorForm.cowsPerYear} 
+                onChange={e => setInvestorForm({ ...investorForm, cowsPerYear: e.target.value })} 
+              />
+              
+              <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-xl flex items-center justify-between mt-4">
+                <span className="text-xs font-medium text-indigo-400">Cows After 1 Year:</span>
+                <span className="text-sm font-bold text-white">{Number(investorForm.cowsPerYear) || 0} cows</span>
+              </div>
+              <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-xl flex items-center justify-between mt-2">
+                <span className="text-xs font-medium text-indigo-400">Cows After 5 Years (Projected):</span>
+                <span className="text-sm font-bold text-white">{(Number(investorForm.cowsPerYear) || 0) * 5} cows</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+            <button type="button" className="btn-secondary" onClick={() => setIsInvestorModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Settings</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Add Sacco Transaction Modal */}
+      <Modal 
+        isOpen={isTxModalOpen} 
+        onClose={() => setIsTxModalOpen(false)} 
+        title="Add Sacco Transaction"
+      >
+        <form onSubmit={handleSaveTx} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Date *</label>
+              <input 
+                required 
+                type="date" 
+                className="input-field" 
+                value={txForm.date} 
+                onChange={e => setTxForm({ ...txForm, date: e.target.value })} 
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Transaction Type *</label>
+              <select 
+                required 
+                className="input-field" 
+                value={txForm.type} 
+                onChange={e => setTxForm({ ...txForm, type: e.target.value })}
+              >
+                <option value="Income">Income</option>
+                <option value="Expense">Expense</option>
+                <option value="Transfer">Transfer (e.g. Bank to Petty Cash)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Source / Account *</label>
+              <select 
+                required 
+                className="input-field" 
+                value={txForm.source} 
+                onChange={e => setTxForm({ ...txForm, source: e.target.value })}
+              >
+                <option value="Bank">Bank Account</option>
+                <option value="Petty Cash">Petty Cash</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Category *</label>
+              <select 
+                required 
+                className="input-field" 
+                value={txForm.category} 
+                onChange={e => setTxForm({ ...txForm, category: e.target.value })}
+              >
+                <option value="Share Purchase">Share Purchase</option>
+                <option value="Membership Fee">Membership Fee</option>
+                <option value="Pioneer Contribution">Pioneer Contribution</option>
+                <option value="Investment Deposit">Investment Deposit</option>
+                <option value="General Expense">General Expense</option>
+                <option value="Investment Payout">Investment Payout</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Amount (UGX) *</label>
+              <input 
+                required 
+                type="number" 
+                min="1" 
+                placeholder="e.g. 50000"
+                className="input-field font-semibold text-white" 
+                value={txForm.amount} 
+                onChange={e => setTxForm({ ...txForm, amount: e.target.value })} 
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Description</label>
+              <textarea 
+                className="input-field h-20 bg-white/5 border border-white/10 rounded-xl p-3 text-white outline-none w-full" 
+                placeholder="Transaction details..."
+                value={txForm.description} 
+                onChange={e => setTxForm({ ...txForm, description: e.target.value })} 
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+            <button type="button" className="btn-secondary" onClick={() => setIsTxModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Transaction</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Confirm Dialogs */}
+      <ConfirmDialog 
+        isOpen={isDeleteOpen} 
+        onClose={() => setIsDeleteOpen(false)} 
+        onConfirm={async () => {
+          if (selectedItem) {
+            await deleteMember(selectedItem.id)
+            setSelectedItem(null)
+          }
+        }} 
+        title="Delete SACCO Member?" 
+        message={`Are you sure you want to delete ${selectedItem?.name}? This will remove all their shares and investor settings.`} 
+      />
+
+      <ConfirmDialog 
+        isOpen={isTxDeleteOpen} 
+        onClose={() => setIsTxDeleteOpen(false)} 
+        onConfirm={async () => {
+          if (selectedItem) {
+            await deleteTransaction(selectedItem.id)
+            setSelectedItem(null)
+          }
+        }} 
+        title="Delete Transaction?" 
+        message="Are you sure you want to permanently delete this financial record from the ledger?" 
+      />
+    </div>
+  )
+}

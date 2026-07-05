@@ -47,6 +47,11 @@ const SYNC_TABLES = {
   attendance:       'attendance',
   tasks:            'tasks',
   notifications:    'notifications',
+  saccoMembers:     'saccoMembers',
+  saccoShares:      'saccoShares',
+  saccoInvestors:   'saccoInvestors',
+  saccoTransactions: 'saccoTransactions',
+  saccoSavings:     'saccoSavings',
 }
 
 import { onSnapshot } from 'firebase/firestore'

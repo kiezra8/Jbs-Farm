@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { startOfWeek, startOfMonth } from 'date-fns'
 import { Download, FileText, FileSpreadsheet } from 'lucide-react'
 import { exportToPDF, exportToExcel } from '../../utils/exporters'
@@ -12,6 +12,11 @@ export default function Reports() {
   const { records: milkRecords, loadRecords: loadMilk } = useMilkStore()
   const { transactions, loadTransactions } = useFinanceStore()
   const { records: healthRecords, loadRecords: loadHealth } = useHealthStore()
+
+  // Date selection states
+  const [selectedDailyDate, setSelectedDailyDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedWeeklyDate, setSelectedWeeklyDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedMonthlyDate, setSelectedMonthlyDate] = useState(new Date().toISOString().split('T')[0])
 
   useEffect(() => {
     loadAnimals()
@@ -37,8 +42,29 @@ export default function Reports() {
   }
 
   const handleExportMilk = (type, period = 'daily') => {
+    let filteredRecords = [...milkRecords]
+    
+    if (period === 'daily') {
+      filteredRecords = milkRecords.filter(r => r.date === selectedDailyDate)
+    } else if (period === 'weekly') {
+      const targetDate = new Date(selectedWeeklyDate)
+      const start = startOfWeek(targetDate, { weekStartsOn: 1 })
+      const end = new Date(start)
+      end.setDate(start.getDate() + 6)
+      
+      const startStr = start.toISOString().split('T')[0]
+      const endStr = end.toISOString().split('T')[0]
+      filteredRecords = milkRecords.filter(r => r.date >= startStr && r.date <= endStr)
+    } else if (period === 'monthly') {
+      const targetDate = new Date(selectedMonthlyDate)
+      const year = targetDate.getFullYear()
+      const month = String(targetDate.getMonth() + 1).padStart(2, '0')
+      const prefix = `${year}-${month}`
+      filteredRecords = milkRecords.filter(r => r.date.startsWith(prefix))
+    }
+
     const pivotedRowsMap = {}
-    milkRecords.forEach(r => {
+    filteredRecords.forEach(r => {
       let dateKey = r.date;
       if (period === 'weekly') {
         const d = new Date(r.date);
@@ -64,11 +90,11 @@ export default function Reports() {
         }
       }
       const row = pivotedRowsMap[key]
-      if (r.session === 'Morning') row.morning += (r.amount || 0)
-      if (r.session === 'Afternoon') row.afternoon += (r.amount || 0)
-      if (r.session === 'Evening') row.evening += (r.amount || 0)
-      row.calvesAmount += (r.calvesAmount || 0)
-      row.totalAmount += (r.amount || 0)
+      if (r.session === 'Morning') row.morning += (Number(r.amount) || 0)
+      if (r.session === 'Afternoon') row.afternoon += (Number(r.amount) || 0)
+      if (r.session === 'Evening') row.evening += (Number(r.amount) || 0)
+      row.calvesAmount += (Number(r.calvesAmount) || 0)
+      row.totalAmount += (Number(r.amount) || 0)
     })
 
     const groupedByDate = {};
@@ -213,9 +239,54 @@ export default function Reports() {
 
   const reports = [
     { title: 'Herd Inventory', desc: 'Full list of all cattle currently on the farm.', action: (type) => handleExportHerd(type) },
-    { title: 'Daily Milk Production', desc: 'Historical daily milk yield data.', action: (type) => handleExportMilk(type, 'daily') },
-    { title: 'Weekly Milk Summary', desc: 'Milk production aggregated by week.', action: (type) => handleExportMilk(type, 'weekly') },
-    { title: 'Monthly Milk Summary', desc: 'Milk production aggregated by month.', action: (type) => handleExportMilk(type, 'monthly') },
+    { 
+      title: 'Daily Milk Production', 
+      desc: 'Detailed daily milk yield data.', 
+      action: (type) => handleExportMilk(type, 'daily'),
+      selector: (
+        <div className="mt-2.5">
+          <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Date</label>
+          <input 
+            type="date" 
+            className="input-field mt-1 text-xs py-1.5 px-2 max-w-[200px] border-white/10" 
+            value={selectedDailyDate} 
+            onChange={e => setSelectedDailyDate(e.target.value)} 
+          />
+        </div>
+      )
+    },
+    { 
+      title: 'Weekly Milk Summary', 
+      desc: 'Milk production aggregated by week.', 
+      action: (type) => handleExportMilk(type, 'weekly'),
+      selector: (
+        <div className="mt-2.5">
+          <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Date in Week</label>
+          <input 
+            type="date" 
+            className="input-field mt-1 text-xs py-1.5 px-2 max-w-[200px] border-white/10" 
+            value={selectedWeeklyDate} 
+            onChange={e => setSelectedWeeklyDate(e.target.value)} 
+          />
+        </div>
+      )
+    },
+    { 
+      title: 'Monthly Milk Summary', 
+      desc: 'Milk production aggregated by month.', 
+      action: (type) => handleExportMilk(type, 'monthly'),
+      selector: (
+        <div className="mt-2.5">
+          <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Date in Month</label>
+          <input 
+            type="date" 
+            className="input-field mt-1 text-xs py-1.5 px-2 max-w-[200px] border-white/10" 
+            value={selectedMonthlyDate} 
+            onChange={e => setSelectedMonthlyDate(e.target.value)} 
+          />
+        </div>
+      )
+    },
     { title: 'Financial Statement', desc: 'Income and expenses ledger.', action: (type) => handleExportFinance(type) },
     { title: 'Health & Vet', desc: 'Vaccinations and treatment history.', action: (type) => handleExportHealth(type) },
   ]
@@ -232,11 +303,12 @@ export default function Reports() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {reports.map(r => (
           <div key={r.title} className="glass-card p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-            <div>
+            <div className="flex-1">
               <h3 className="font-display font-semibold text-white text-lg">{r.title}</h3>
               <p className="text-sm text-slate-400 mt-1">{r.desc}</p>
+              {r.selector}
             </div>
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex gap-2 w-full sm:w-auto mt-4 sm:mt-0">
               <button onClick={() => r.action('pdf')} className="btn-secondary flex-1 sm:flex-none justify-center px-3 py-1.5" title="Export PDF">
                 <FileText size={16} className="text-red-400" /> PDF
               </button>

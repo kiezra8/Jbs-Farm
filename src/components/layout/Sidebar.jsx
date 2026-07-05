@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Beef, Heart, Baby, Milk, Wheat, DollarSign,
   Users, BarChart3, FileText, Bell, Settings, LogOut, ChevronLeft,
-  ChevronRight, Activity, Menu, X
+  ChevronRight, Activity, Menu, X, Building2, PiggyBank
 } from 'lucide-react'
 import { useUIStore } from '../../store/useUIStore'
 import { useAuthStore } from '../../store/useAuthStore'
@@ -18,6 +18,8 @@ const navItems = [
   { to: '/milk', icon: Milk, label: 'Milk Production' },
   { to: '/feed', icon: Wheat, label: 'Feed & Nutrition' },
   { to: '/finance', icon: DollarSign, label: 'Finances' },
+  { to: '/sacco', icon: Building2, label: 'SACCO' },
+  { to: '/sacco?tab=savings', icon: PiggyBank, label: 'SACCO Savings', isSubItem: true },
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/reports', icon: FileText, label: 'Reports' },
@@ -103,16 +105,18 @@ export default function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-          {navItems.map(({ to, icon: Icon, label }) => (
+          {navItems.map(({ to, icon: Icon, label, isSubItem }) => (
             <NavLink
               key={to}
               to={to}
               onClick={() => setMobileMenu(false)}
-              className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+              className={({ isActive }) => 
+                `sidebar-link ${isActive ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''} ${isSubItem && !sidebarCollapsed ? 'ml-4 pl-3 border-l border-white/10 text-[13px]' : ''}`
+              }
               title={sidebarCollapsed ? label : undefined}
             >
               <div className="relative flex-shrink-0">
-                <Icon size={18} />
+                <Icon size={isSubItem ? 15 : 18} />
                 {to === '/notifications' && unreadCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] flex items-center justify-center font-bold">
                     {unreadCount > 9 ? '9+' : unreadCount}
