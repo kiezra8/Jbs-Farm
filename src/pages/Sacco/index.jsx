@@ -79,6 +79,9 @@ export default function Sacco() {
 
   const excelInputRef = useRef(null)
 
+  const [isUnlocked, setIsUnlocked] = useState(() => sessionStorage.getItem('saccoUnlocked') === 'true')
+  const [pinInput, setPinInput] = useState('')
+
   useEffect(() => {
     loadSaccoData()
   }, [])
@@ -419,6 +422,42 @@ export default function Sacco() {
       </button>
     )}
   ]
+
+  if (!isUnlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 mb-2">
+          <Building2 className="text-emerald-400" size={32} />
+        </div>
+        <h2 className="text-2xl font-bold text-white">SACCO Access Secured</h2>
+        <p className="text-slate-400 text-sm mb-4 text-center max-w-sm">Please enter the security PIN to access the SACCO management portal.</p>
+        
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (pinInput === '7654320') {
+              setIsUnlocked(true)
+              sessionStorage.setItem('saccoUnlocked', 'true')
+            } else {
+              alert('Incorrect PIN')
+              setPinInput('')
+            }
+          }} 
+          className="flex gap-2 w-full max-w-xs"
+        >
+          <input 
+            type="password" 
+            placeholder="Enter PIN" 
+            className="input-field text-center font-mono tracking-[0.3em] text-lg flex-1"
+            value={pinInput}
+            onChange={e => setPinInput(e.target.value)}
+            autoFocus
+          />
+          <button type="submit" className="btn-primary px-6">Unlock</button>
+        </form>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
