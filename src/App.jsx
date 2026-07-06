@@ -14,7 +14,6 @@ import Health from './pages/Health'
 import Breeding from './pages/Breeding'
 import Milk from './pages/Milk'
 import Feed from './pages/Feed'
-import Finance from './pages/Finance'
 import Staff from './pages/Staff'
 import Analytics from './pages/Analytics'
 import Reports from './pages/Reports'
@@ -63,7 +62,6 @@ function App() {
           <Route path="/breeding" element={<Breeding />} />
           <Route path="/milk" element={<Milk />} />
           <Route path="/feed" element={<Feed />} />
-          <Route path="/finance" element={<Finance />} />
           <Route path="/sacco" element={<Sacco />} />
           <Route path="/staff" element={<Staff />} />
           <Route path="/analytics" element={<Analytics />} />

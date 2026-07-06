@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank } from 'lucide-react'
+import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign } from 'lucide-react'
 import { useSaccoStore } from '../../store/useSaccoStore'
 import DataTable from '../../components/ui/DataTable'
 import Modal from '../../components/ui/Modal'
@@ -8,6 +8,8 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
+import MemberDetailsModal from './MemberDetailsModal'
+import Finance from '../Finance'
 
 export default function Sacco() {
   const { 
@@ -43,6 +45,9 @@ export default function Sacco() {
   const [isInvestorModalOpen, setIsInvestorModalOpen] = useState(false)
   const [isTxModalOpen, setIsTxModalOpen] = useState(false)
   
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
+  const [detailedMemberId, setDetailedMemberId] = useState(null)
+
   const [editingMember, setEditingMember] = useState(null)
   const [editingSharesMember, setEditingSharesMember] = useState(null)
   const [editingSavingsMember, setEditingSavingsMember] = useState(null)
@@ -264,7 +269,11 @@ export default function Sacco() {
         )}
       </div>
     )},
-    { key: 'name', label: 'Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'name', label: 'Name', render: (val, row) => (
+      <button onClick={() => { setDetailedMemberId(row.id); setIsDetailsModalOpen(true); }} className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors text-left underline decoration-emerald-500/30 underline-offset-4">
+        {val}
+      </button>
+    )},
     { key: 'phone', label: 'Phone' },
     { key: 'nin', label: 'NIN' },
     { key: 'category', label: 'Category', render: (val) => {
@@ -298,7 +307,11 @@ export default function Sacco() {
   ]
 
   const sharesColumns = [
-    { key: 'name', label: 'Member Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'name', label: 'Member Name', render: (val, row) => (
+      <button onClick={() => { setDetailedMemberId(row.id); setIsDetailsModalOpen(true); }} className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors text-left underline decoration-emerald-500/30 underline-offset-4">
+        {val}
+      </button>
+    )},
     { key: 'category', label: 'Category' },
     { key: 'shareCount', label: 'Shares Owned', render: (val) => <span className="font-bold text-white">{val}</span> },
     { key: 'value', label: 'Total Value', render: (val) => <span className="text-emerald-400 font-semibold">{formatUGX(val)}</span> },
@@ -314,7 +327,11 @@ export default function Sacco() {
   ]
 
   const savingsColumns = [
-    { key: 'name', label: 'Member Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'name', label: 'Member Name', render: (val, row) => (
+      <button onClick={() => { setDetailedMemberId(row.id); setIsDetailsModalOpen(true); }} className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors text-left underline decoration-emerald-500/30 underline-offset-4">
+        {val}
+      </button>
+    )},
     { key: 'category', label: 'Category' },
     { key: 'savingAmount', label: 'Savings Balance', render: (val) => <span className="text-blue-400 font-bold">{formatUGX(val)}</span> },
     { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
@@ -339,7 +356,11 @@ export default function Sacco() {
   ]
 
   const investorsColumns = [
-    { key: 'name', label: 'Investor Name', render: (val) => <span className="font-semibold text-white">{val}</span> },
+    { key: 'name', label: 'Investor Name', render: (val, row) => (
+      <button onClick={() => { setDetailedMemberId(row.memberId || row.id); setIsDetailsModalOpen(true); }} className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors text-left underline decoration-emerald-500/30 underline-offset-4">
+        {val}
+      </button>
+    )},
     { key: 'category', label: 'Category', render: (val) => (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Money Maker' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
         {val}
@@ -537,97 +558,123 @@ export default function Sacco() {
         </div>
       )}
 
-      {/* Tabs Navigation */}
-      <div className="flex border-b border-white/10 overflow-x-auto scrollbar-none">
-        <button 
-          onClick={() => setActiveTab('members')} 
-          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'members' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
-        >
-          <Users size={16} /> Members
-        </button>
-        <button 
-          onClick={() => setActiveTab('shares')} 
-          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'shares' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
-        >
-          <Coins size={16} /> Share Counting
-        </button>
-        <button 
-          onClick={() => setActiveTab('savings')} 
-          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'savings' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
-        >
-          <PiggyBank size={16} /> Savings
-        </button>
-        <button 
-          onClick={() => setActiveTab('investors')} 
-          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'investors' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
-        >
-          <TrendingUp size={16} /> Investors Section
-        </button>
-        <button 
-          onClick={() => setActiveTab('accounts')} 
-          className={`px-4 py-2.5 font-display text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 flex-shrink-0 ${activeTab === 'accounts' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
-        >
-          <Wallet size={16} /> Accounts
-        </button>
-      </div>
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Side Navigation */}
+        <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible w-full lg:w-56 flex-shrink-0 scrollbar-none">
+          <button 
+            onClick={() => setActiveTab('members')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'members' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+          >
+            <Users size={18} /> Members
+          </button>
+          <button 
+            onClick={() => setActiveTab('shares')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'shares' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+          >
+            <Coins size={18} /> Share Counting
+          </button>
+          <button 
+            onClick={() => setActiveTab('savings')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'savings' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+          >
+            <PiggyBank size={18} /> Savings
+          </button>
+          <button 
+            onClick={() => setActiveTab('investors')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'investors' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+          >
+            <TrendingUp size={18} /> Investors
+          </button>
+          <button 
+            onClick={() => setActiveTab('accounts')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'accounts' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+          >
+            <Wallet size={18} /> Accounts
+          </button>
+          
+          <div className="h-px bg-white/10 my-2 hidden lg:block"></div>
+          
+          <button 
+            onClick={() => setActiveTab('finance')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'finance' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+          >
+            <DollarSign size={18} /> Farm Finances
+          </button>
+        </div>
 
-      {/* Tab Contents */}
-      <div className="space-y-0">
-        {/* Search / Filters Bar (not shown in accounts tab) */}
-        {activeTab !== 'accounts' && (
-          <div className="glass-card p-4 mb-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-                <Search size={16} className="text-slate-400 flex-shrink-0" />
-                <input 
-                  type="text" 
-                  placeholder={activeTab === 'members' ? "Search members by name, phone or NIN..." : "Search by member name..."} 
-                  className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500" 
-                  value={searchQuery} 
-                  onChange={(e) => setSearchQuery(e.target.value)} 
-                />
-              </div>
-              
-              {activeTab === 'members' && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-                  <Filter size={16} className="text-slate-400" />
-                  <select 
-                    className="bg-transparent border-none outline-none text-sm text-white" 
-                    value={categoryFilter} 
-                    onChange={e => setCategoryFilter(e.target.value)}
-                  >
-                    <option value="">All Categories</option>
-                    <option value="Pioneer">Pioneer</option>
-                    <option value="Investor">Investor</option>
-                    <option value="Saving Member">Saving Member</option>
-                  </select>
+        {/* Content Area */}
+        <div className="flex-1 min-w-0">
+          {activeTab === 'finance' ? (
+            <div className="glass-card p-6 bg-[#020617]/50 rounded-2xl">
+               <Finance />
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {/* Search / Filters Bar (not shown in accounts tab) */}
+              {activeTab !== 'accounts' && (
+                <div className="glass-card p-4 mb-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="flex-1 flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                      <Search size={16} className="text-slate-400 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder={activeTab === 'members' ? "Search members by name, phone or NIN..." : "Search by member name..."} 
+                        className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500" 
+                        value={searchQuery} 
+                        onChange={(e) => setSearchQuery(e.target.value)} 
+                      />
+                    </div>
+                    
+                    {activeTab === 'members' && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                        <Filter size={16} className="text-slate-400" />
+                        <select 
+                          className="bg-transparent border-none outline-none text-sm text-white" 
+                          value={categoryFilter} 
+                          onChange={e => setCategoryFilter(e.target.value)}
+                        >
+                          <option value="">All Categories</option>
+                          <option value="Pioneer">Pioneer</option>
+                          <option value="Investor">Investor</option>
+                          <option value="Saving Member">Saving Member</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
+              {/* Tab Specific Views */}
+              {activeTab === 'members' && (
+                <DataTable columns={memberColumns} data={filteredMembers} pageSize={10} />
+              )}
+
+              {activeTab === 'shares' && (
+                <DataTable columns={sharesColumns} data={sharesData} pageSize={10} />
+              )}
+
+              {activeTab === 'savings' && (
+                <DataTable columns={savingsColumns} data={savingsData} pageSize={10} />
+              )}
+
+              {activeTab === 'investors' && (
+                <DataTable columns={investorsColumns} data={investorsData} pageSize={10} />
+              )}
+
+              {activeTab === 'accounts' && (
+                <DataTable columns={txColumns} data={txData} pageSize={10} />
+              )}
             </div>
-          </div>
-        )}
-
-        {/* Tab Specific Views */}
-        {activeTab === 'members' && (
-          <DataTable columns={memberColumns} data={filteredMembers} pageSize={10} />
-        )}
-
-        {activeTab === 'shares' && (
-          <DataTable columns={sharesColumns} data={sharesData} pageSize={10} />
-        )}
-
-        {activeTab === 'savings' && (
-          <DataTable columns={savingsColumns} data={savingsData} pageSize={10} />
-        )}
-
-        {activeTab === 'investors' && (
-          <DataTable columns={investorsColumns} data={investorsData} pageSize={10} />
-        )}
-
-        {activeTab === 'accounts' && (
-          <DataTable columns={txColumns} data={txData} pageSize={10} />
-        )}
+          )}
+        </div>
       </div>
+
+      {/* Detailed Member Modal */}
+      <MemberDetailsModal 
+        isOpen={isDetailsModalOpen} 
+        onClose={() => setIsDetailsModalOpen(false)} 
+        memberId={detailedMemberId} 
+      />
 
       {/* Member Form Modal */}
       <Modal 
