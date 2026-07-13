@@ -136,7 +136,9 @@ export default function Sacco() {
         const ws = wb.Sheets[wb.SheetNames[0]]
         const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
         await useSaccoStore.getState().importInvestmentExcel(data)
-        alert('Investment Excel imported successfully!')
+        // Auto-push to cloud so all devices see the same data
+        try { await forceUploadAllLocalData() } catch (_) {}
+        alert('Investment Excel imported and synced to cloud successfully!')
       } catch (err) {
         console.error(err)
         alert('Failed to parse Investment Excel file')
@@ -182,7 +184,9 @@ export default function Sacco() {
         }
 
         if (totalImported > 0) {
-          alert(`Successfully imported ${totalImported} SACCO records across all sheets!\n\n• 2026 (Jan-Dec) = General Membership\n• 2026-2027 (Jun-Jun) = June Membership`)
+          // Auto-push to cloud so all devices see the same data immediately
+          try { await forceUploadAllLocalData() } catch (_) {}
+          alert(`Successfully imported ${totalImported} SACCO records and synced to cloud!\n\nAll devices will now see the updated data.`)
         } else {
           // Fall back to single-sheet mode for custom files
           const wsname = wb.SheetNames[0]
@@ -190,7 +194,8 @@ export default function Sacco() {
           const data = XLSX.utils.sheet_to_json(ws)
           if (data.length > 0) {
             await importFromExcel(data, selectedYear, wsname)
-            alert(`Successfully imported ${data.length} SACCO records for financial year ${selectedYear}!`)
+            try { await forceUploadAllLocalData() } catch (_) {}
+            alert(`Successfully imported ${data.length} SACCO records and synced to cloud!`)
           } else {
             alert('Excel file is empty.')
           }

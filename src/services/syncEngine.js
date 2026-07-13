@@ -70,6 +70,47 @@ export async function fetchAllFromFirebase() {
   unsubscribes.forEach(unsub => unsub())
   unsubscribes = []
 
+  // Lazy-load stores to avoid circular imports
+  const getSaccoStore  = () => import('../store/useSaccoStore').then(m => m.useSaccoStore.getState())
+  const getMilkStore   = () => import('../store/useMilkStore').then(m => m.useMilkStore.getState())
+  const getAnimalStore = () => import('../store/useAnimalStore').then(m => m.useAnimalStore?.getState?.())
+  const getFinanceStore= () => import('../store/useFinanceStore').then(m => m.useFinanceStore?.getState?.())
+  const getStaffStore  = () => import('../store/useStaffStore').then(m => m.useStaffStore?.getState?.())
+
+  // Map each Dexie table to the store reload function that should run when it changes
+  const SACCO_TABLES = new Set(['saccoMembers','saccoShares','saccoInvestors','saccoTransactions','saccoSavings','saccoYearlySavings'])
+  const MILK_TABLES  = new Set(['milkRecords'])
+  const ANIMAL_TABLES= new Set(['animals','healthRecords','breedingRecords'])
+  const FINANCE_TABLES=new Set(['finances'])
+  const STAFF_TABLES = new Set(['staff','attendance'])
+
+  // Debounce: avoid reloading the same store many times in one snapshot batch
+  let saccoReloadTimer = null
+  let milkReloadTimer  = null
+  let animalReloadTimer= null
+  let financeReloadTimer=null
+  let staffReloadTimer = null
+
+  const scheduleReload = (timerRef, delayMs, loaderFn, reloadFnName) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      try {
+        const store = await loaderFn()
+        if (store && typeof store[reloadFnName] === 'function') {
+          await store[reloadFnName]()
+        }
+      } catch (_) {}
+      timerRef.current = null
+    }, delayMs)
+  }
+
+  // Use object wrappers so timers can be mutated inside the closure
+  const saccoT  = { current: null }
+  const milkT   = { current: null }
+  const animalT = { current: null }
+  const financeT= { current: null }
+  const staffT  = { current: null }
+
   try {
     for (const [dexieTable, firebaseCollection] of Object.entries(SYNC_TABLES)) {
       try {
@@ -101,6 +142,22 @@ export async function fetchAllFromFirebase() {
             if (toDelete.length > 0) {
               await db[dexieTable].bulkDelete(toDelete)
             }
+
+            // ── Notify the correct UI store to reload so screen updates instantly ──
+            const hasChanges = toUpsert.length > 0 || toDelete.length > 0
+            if (hasChanges) {
+              if (SACCO_TABLES.has(dexieTable)) {
+                scheduleReload(saccoT, 400, getSaccoStore, 'loadSaccoData')
+              } else if (MILK_TABLES.has(dexieTable)) {
+                scheduleReload(milkT, 400, getMilkStore, 'loadMilkData')
+              } else if (ANIMAL_TABLES.has(dexieTable)) {
+                scheduleReload(animalT, 400, getAnimalStore, 'loadAnimals')
+              } else if (FINANCE_TABLES.has(dexieTable)) {
+                scheduleReload(financeT, 400, getFinanceStore, 'loadFinances')
+              } else if (STAFF_TABLES.has(dexieTable)) {
+                scheduleReload(staffT, 400, getStaffStore, 'loadStaff')
+              }
+            }
           } catch (err) {
             console.error(`Error updating local ${dexieTable}:`, err)
           } finally {
@@ -122,6 +179,7 @@ export async function fetchAllFromFirebase() {
     console.error('Fatal sync setup error:', e)
   }
 }
+
 
 // ─── Add a single record change to the local pending queue ────────
 export async function addToSyncQueue(table, operation, recordId, data) {
