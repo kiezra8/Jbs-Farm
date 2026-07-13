@@ -62,6 +62,47 @@ export const useSaccoStore = create((set, get) => ({
     await get().loadSaccoData()
   },
 
+  clearDatabase: async () => {
+    set({ loading: true })
+    await Promise.all([
+      db.saccoMembers.clear(),
+      db.saccoShares.clear(),
+      db.saccoInvestors.clear(),
+      db.saccoTransactions.clear(),
+      db.saccoSavings.clear(),
+      db.saccoYearlySavings.clear()
+    ])
+    set({ members: [], shares: [], investors: [], transactions: [], savings: [], yearlySavings: [], loading: false })
+  },
+
+  clearPhase3Investors: async () => {
+    set({ loading: true })
+    const allInvestors = await db.saccoInvestors.toArray()
+    const phase3Investors = allInvestors.filter(i => i.investmentPhase === 'Phase 3')
+    if (phase3Investors.length > 0) {
+      await db.saccoInvestors.bulkDelete(phase3Investors.map(i => i.id))
+      
+      // Also clean up members that were strictly created from Phase 3 import
+      const allMembers = await db.saccoMembers.toArray()
+      const phase3MemberIds = phase3Investors.map(i => i.memberId)
+      
+      // Optional: Delete the members, shares, and savings of those who were ONLY Phase 3 investors
+      // For safety, we just delete their investor records. The user wants the 126 Phase 3 investors gone.
+      // If we need to delete the member as well to clean up:
+      const membersToDelete = allMembers.filter(m => phase3MemberIds.includes(m.id) && m.sheetSource === 'PHASE 3')
+      if (membersToDelete.length > 0) {
+        await db.saccoMembers.bulkDelete(membersToDelete.map(m => m.id))
+        
+        const sharesToDelete = await db.saccoShares.where('memberId').anyOf(membersToDelete.map(m => m.id)).toArray()
+        if (sharesToDelete.length > 0) await db.saccoShares.bulkDelete(sharesToDelete.map(s => s.id))
+
+        const savingsToDelete = await db.saccoSavings.where('memberId').anyOf(membersToDelete.map(m => m.id)).toArray()
+        if (savingsToDelete.length > 0) await db.saccoSavings.bulkDelete(savingsToDelete.map(s => s.id))
+      }
+    }
+    await get().loadSaccoData()
+  },
+
   loadSaccoData: async () => {
     set({ loading: true })
     let [members, shares, investors, transactions, savings, yearlySavings] = await Promise.all([
@@ -73,83 +114,6 @@ export const useSaccoStore = create((set, get) => ({
       db.saccoYearlySavings.toArray()
     ])
 
-    // Auto-seed data if members are empty
-    if (members.length === 0) {
-      try {
-        const seedModule = await import('../db/sacco_seed.json');
-        const seedData = seedModule.default || seedModule;
-        await get().importFromExcel(seedData);
-        // importFromExcel already calls loadSaccoData, so we can return early to prevent duplicates
-        return;
-      } catch (err) {
-        console.error("Failed to load initial sacco seed data:", err);
-      }
-    }
-
-    // Auto-seed investors if investor table is empty
-    if (investors.length === 0) {
-      try {
-        const invModule = await import('../db/investors_seed.json');
-        const invData = (invModule.default || invModule);
-        const now = new Date().toISOString();
-        for (const inv of invData) {
-          if (!inv.name) continue;
-          // Check if a matching member already exists using robust fuzzy matching
-          let matchedMember = findMatchingMember(members, inv.name);
-          let memberId;
-          if (!matchedMember) {
-            // Create a placeholder member marked as Investor
-            memberId = crypto.randomUUID();
-            const memberRecord = {
-              id: memberId,
-              name: cleanName(inv.name),
-              phone: '',
-              nin: '',
-              category: ['Investor'],
-              photo: '',
-              correctBalance: 0, jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
-              jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0,
-              total: 0, shares: 0, admin: 0, savings: 0, mandatory: 0,
-              withdrawable: 0, requested: 0, difference: 0, noOfShares: 0,
-              createdAt: now
-            };
-            await db.saccoMembers.add(memberRecord);
-            members.push(memberRecord);
-            // Create linked shares + savings
-            await db.saccoShares.add({ id: crypto.randomUUID(), memberId, shareCount: 1, createdAt: now });
-            await db.saccoSavings.add({ id: crypto.randomUUID(), memberId, savingAmount: 0, updatedAt: now });
-          } else {
-            memberId = matchedMember.id;
-            // Update member category to include Investor
-            const existingCats = Array.isArray(matchedMember.category) ? matchedMember.category : [matchedMember.category || 'Saving Member'];
-            if (!existingCats.includes('Investor')) {
-              await db.saccoMembers.update(memberId, { category: [...existingCats, 'Investor'] });
-            }
-          }
-          // Create the investor record
-          const invRecord = {
-            id: crypto.randomUUID(),
-            memberId,
-            category: inv.investorType || 'Money Maker',
-            investorType: inv.investorType || 'Money Maker',
-            investmentPhase: inv.investmentPhase || 'Phase 3',
-            marketingStrategy: inv.marketingStrategy || false,
-            investmentAmount: inv.paid || 0,   // actual paid amount
-            programAmount: inv.program || 0,   // total program target
-            balance: inv.balance || 0,
-            status: inv.status || (inv.cleared ? 'CLEARED' : ''),
-            cowsPerYear: 0,
-            createdAt: now
-          };
-          await db.saccoInvestors.add(invRecord);
-        }
-        console.log(`Auto-seeded ${invData.length} investors`);
-      } catch (err) {
-        console.error("Failed to load investor seed data:", err);
-      }
-      // Reload after seeding
-      return get().loadSaccoData();
-    }
     // Enforce "minimum one share" rule. Auto-heal any records with < 1 shares.
     const now = new Date().toISOString()
     
@@ -237,14 +201,7 @@ export const useSaccoStore = create((set, get) => ({
       yearlySavings = await db.saccoYearlySavings.toArray()
     }
 
-    // 2. Ensure all members have paid the admin fee of 50,000
-    for (const m of members) {
-      if ((m.admin || 0) < 50000) {
-        await db.saccoMembers.update(m.id, { admin: 50000, total: Math.max(50000, m.total || 0) })
-        m.admin = 50000
-        m.total = Math.max(50000, m.total || 0)
-      }
-    }
+    // 2. Admin fee is read directly from Excel — no enforcement override.
 
     // 3. Migrate any existing members' monthly data to saccoYearlySavings (for 2026)
     const selectedYear = get().selectedYear || '2026'
@@ -301,73 +258,6 @@ export const useSaccoStore = create((set, get) => ({
     set({ members: mappedMembers, shares, investors, transactions, savings, yearlySavings, loading: false })
   },
 
-  importInvestors: async () => {
-    set({ loading: true })
-    try {
-      // Delete existing to trigger sync hooks
-      const oldInvestors = await db.saccoInvestors.toArray()
-      if (oldInvestors.length > 0) {
-        await db.saccoInvestors.bulkDelete(oldInvestors.map(i => i.id))
-      }
-
-      const invModule = await import('../db/investors_seed.json')
-      const invData = invModule.default || invModule
-      const members = await db.saccoMembers.toArray()
-      const now = new Date().toISOString()
-
-      for (const inv of invData) {
-        if (!inv.name) continue
-
-        // Match existing member using robust fuzzy matching
-        let matchedMember = findMatchingMember(members, inv.name);
-        let memberId
-
-        if (!matchedMember) {
-          // Create new member placeholder
-          memberId = crypto.randomUUID()
-          const memberRecord = {
-            id: memberId, name: cleanName(inv.name), phone: '', nin: '',
-            category: ['Investor'], photo: '',
-            correctBalance: 0, jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
-            jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0,
-            total: 50000, shares: 0, admin: 50000, savings: 0, mandatory: 0,
-            withdrawable: 0, requested: 0, difference: 0, noOfShares: 0,
-            createdAt: now
-          }
-          await db.saccoMembers.add(memberRecord)
-          // Create linked shares + savings
-          await db.saccoShares.add({ id: crypto.randomUUID(), memberId, shareCount: 1, createdAt: now })
-          await db.saccoSavings.add({ id: crypto.randomUUID(), memberId, savingAmount: 0, updatedAt: now })
-        } else {
-          memberId = matchedMember.id
-          // Ensure Investor is in their categories
-          const existingCats = Array.isArray(matchedMember.category) ? matchedMember.category : [matchedMember.category || 'Saving Member']
-          if (!existingCats.includes('Investor')) {
-            await db.saccoMembers.update(memberId, { category: [...existingCats, 'Investor'] })
-          }
-        }
-
-        await db.saccoInvestors.add({
-          id: crypto.randomUUID(),
-          memberId,
-          category: inv.investorType || 'Money Maker',
-          investorType: inv.investorType || 'Money Maker',
-          investmentPhase: inv.investmentPhase || 'Phase 3',
-          marketingStrategy: inv.marketingStrategy || false,
-          investmentAmount: inv.paid || 0,
-          programAmount: inv.program || 0,
-          balance: inv.balance || 0,
-          status: inv.status || (inv.cleared ? 'CLEARED' : ''),
-          cowsPerYear: 0,
-          createdAt: now
-        })
-      }
-      console.log(`Imported ${invData.length} investors successfully`)
-    } catch (err) {
-      console.error('Failed to import investors:', err)
-    }
-    return get().loadSaccoData()
-  },
 
   addMember: async (member, financialYear = '2026') => {
     const now = new Date().toISOString()
@@ -612,14 +502,32 @@ export const useSaccoStore = create((set, get) => ({
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       
-      // Skip the header row if it's the first row
-      const nameVal = row["JB'S TEAM 100 MODERN FARMERS SACCO FULLY PAID  SACCO MEMBERS."] || row.NAMES || row.Name
-      if (nameVal === 'NAMES' || !nameVal || typeof nameVal !== 'string') continue
+      // ── Name extraction differs per sheet ──────────────────────────────────
+      // GENERAL MEMBERSHIP / JUNE MEMBERSHIP: name in "JB'S TEAM..." key
+      // PIONEER: name in __EMPTY key, SN/NO in first key
+      // PHASE 3:  name in __EMPTY key, NO in first key
+      let nameVal
+      if (sheetName === 'PIONEER' || sheetName === 'PHASE 3') {
+        nameVal = row['__EMPTY']
+      } else {
+        nameVal = row["JB'S TEAM 100 MODERN FARMERS SACCO FULLY PAID  SACCO MEMBERS."] || row.NAMES || row.Name
+      }
+      // Skip header/empty rows
+      if (!nameVal || typeof nameVal !== 'string') continue
+      const cleanedName = cleanName(nameVal)
+      if (!cleanedName || cleanedName === 'NAMES' || cleanedName === 'NAME') continue
 
       const parseNum = (val) => Number(val) || 0
 
+      // ── Category ────────────────────────────────────────────────────────────
       let categoryArray = []
-      if (row.Category) {
+      if (sheetName === 'PHASE 3') {
+        // PHASE 3: category is in __EMPTY_1 column
+        const cat = (row['__EMPTY_1'] || '').toString().trim()
+        categoryArray = cat ? [cat === 'NEW FARMER' ? 'New Farmer' : cat] : ['Investor']
+      } else if (sheetName === 'PIONEER') {
+        categoryArray = ['Pioneer']
+      } else if (row.Category) {
         if (Array.isArray(row.Category)) {
           categoryArray = row.Category
         } else {
@@ -627,34 +535,83 @@ export const useSaccoStore = create((set, get) => ({
         }
       }
       if (categoryArray.length === 0) {
-        if (sheetName === 'PHASE 3') {
-          categoryArray = ['Investor']
-        } else {
-          categoryArray = ['Saving Member']
-        }
+        categoryArray = ['Saving Member']
       }
 
-      const jan = parseNum(row["__EMPTY_1"] || row.JAN || row.Jan)
-      const feb = parseNum(row["__EMPTY_2"] || row.FEB || row.Feb)
-      const mar = parseNum(row["__EMPTY_3"] || row.MARCH || row.Mar || row.MARCH)
-      const apr = parseNum(row["__EMPTY_4"] || row.APRIL || row.Apr)
-      const may = parseNum(row["__EMPTY_5"] || row.MAY || row.May)
-      const jun = parseNum(row["__EMPTY_6"] || row.JUNE || row.Jun)
-      const jul = parseNum(row["__EMPTY_7"] || row.JULY || row.Jul)
-      const aug = parseNum(row["__EMPTY_8"] || row.AUG || row.Aug)
-      const sep = parseNum(row["__EMPTY_9"] || row.SEP || row.Sep)
-      const oct = parseNum(row["__EMPTY_10"] || row.OCT || row.Oct)
-      const nov = parseNum(row["__EMPTY_11"] || row.NOV || row.Nov)
-      const dec = parseNum(row["__EMPTY_12"] || row.DEC || row.Dec)
-      const total = parseNum(row["__EMPTY_13"] || row.TOTAL || row.Total)
-      const noOfShares = parseNum(row["__EMPTY_21"] || row["NO OF SHARE"] || row.NoOfShares)
-      const admin = Math.max(50000, parseNum(row["__EMPTY_15"] || row.ADMIN || row.Admin))
-      const savings = parseNum(row["__EMPTY_16"] || row.SAVINGS || row.Savings)
-      const mandatory = parseNum(row["__EMPTY_17"] || row.MANDATORY || row.Mandatory)
-      const withdrawable = parseNum(row["__EMPTY_18"] || row["WITHDRAWABLE SAVING"] || row.Withdrawable)
-      const requested = parseNum(row["__EMPTY_19"] || row.REQUESTED || row.Requested)
-      const difference = parseNum(row["__EMPTY_20"] || row.DIFFERENCE || row.Difference)
-      const correctBalance = parseNum(row["__EMPTY"] || row["CORRECT BALANCE AS AT 30TH JAN 2026"] || row.CorrectBalance)
+      // ── Column layout differs per sheet ──────────────────────────────────
+      // GENERAL MEMBERSHIP: __EMPTY=CORRECT_BALANCE, __EMPTY_1=JAN...DEC=__EMPTY_12, TOTAL=__EMPTY_13, SHARES=__EMPTY_14, ADMIN=__EMPTY_15, SAVINGS=__EMPTY_16, MANDATORY=__EMPTY_17, WITHDRAWABLE=__EMPTY_18, REQUESTED=__EMPTY_19, DIFFERENCE=__EMPTY_20, NO_OF_SHARE=__EMPTY_21
+      // JUNE MEMBERSHIP:    (no CORRECT_BALANCE col) __EMPTY=JAN...DEC=__EMPTY_11, TOTAL=__EMPTY_12, SHARES=__EMPTY_13, ADMIN=__EMPTY_14, SAVINGS=__EMPTY_15, MANDATORY=__EMPTY_16, WITHDRAWABLE=__EMPTY_17, DIFFERENCE=__EMPTY_18, REQUESTED=__EMPTY_19, NO_OF_SHARE=__EMPTY_20
+      // PIONEER:            __EMPTY=NAME, __EMPTY_1=QTR1 (savings), __EMPTY_2=ADMIN FEES, __EMPTY_3=BALANCE
+      // PHASE 3:            __EMPTY=NAME, __EMPTY_1=CATEGORY, __EMPTY_2=AMOUNT(program), __EMPTY_3=PAID, __EMPTY_4=BALANCE
+      const isJune    = sheetName === 'JUNE MEMBERSHIP'
+      const isPioneer = sheetName === 'PIONEER'
+      const isPhase3  = sheetName === 'PHASE 3'
+
+      let jan=0, feb=0, mar=0, apr=0, may=0, jun=0, jul=0, aug=0, sep=0, oct=0, nov=0, dec=0
+      let total=0, sharesAmt=0, admin=0, savings=0, mandatory=0, withdrawable=0, requested=0, difference=0, noOfShares=0, correctBalance=0
+
+      if (isPioneer) {
+        // PIONEER: QTR1 payment is in __EMPTY_1, ADMIN FEES in __EMPTY_2, BALANCE in __EMPTY_3
+        savings      = parseNum(row['__EMPTY_1'])   // QTR 1 = savings amount paid
+        admin        = parseNum(row['__EMPTY_2'])   // admin fees paid
+        total        = savings
+        correctBalance = parseNum(row['__EMPTY_3']) // outstanding balance
+        noOfShares   = 1
+      } else if (isPhase3) {
+        // PHASE 3: AMOUNT=program cost, PAID=amount paid, BALANCE=remaining
+        sharesAmt    = parseNum(row['__EMPTY_2'])   // program amount
+        savings      = parseNum(row['__EMPTY_3'])   // amount paid
+        difference   = parseNum(row['__EMPTY_4'])   // balance remaining
+        total        = savings
+        noOfShares   = 1
+      } else if (isJune) {
+        jan  = parseNum(row['__EMPTY'])
+        feb  = parseNum(row['__EMPTY_1'])
+        mar  = parseNum(row['__EMPTY_2'])
+        apr  = parseNum(row['__EMPTY_3'])
+        may  = parseNum(row['__EMPTY_4'])
+        jun  = parseNum(row['__EMPTY_5'])
+        jul  = parseNum(row['__EMPTY_6'])
+        aug  = parseNum(row['__EMPTY_7'])
+        sep  = parseNum(row['__EMPTY_8'])
+        oct  = parseNum(row['__EMPTY_9'])
+        nov  = parseNum(row['__EMPTY_10'])
+        dec  = parseNum(row['__EMPTY_11'])
+        total        = parseNum(row['__EMPTY_12'])
+        sharesAmt    = parseNum(row['__EMPTY_13'])
+        admin        = parseNum(row['__EMPTY_14'])
+        savings      = parseNum(row['__EMPTY_15'])
+        mandatory    = parseNum(row['__EMPTY_16'])
+        withdrawable = parseNum(row['__EMPTY_17'])
+        difference   = parseNum(row['__EMPTY_18'])
+        requested    = parseNum(row['__EMPTY_19'])
+        noOfShares   = parseNum(row['__EMPTY_20'])
+        correctBalance = 0
+      } else {
+        // GENERAL MEMBERSHIP
+        correctBalance = parseNum(row['__EMPTY'])
+        jan  = parseNum(row['__EMPTY_1'])
+        feb  = parseNum(row['__EMPTY_2'])
+        mar  = parseNum(row['__EMPTY_3'])
+        apr  = parseNum(row['__EMPTY_4'])
+        may  = parseNum(row['__EMPTY_5'])
+        jun  = parseNum(row['__EMPTY_6'])
+        jul  = parseNum(row['__EMPTY_7'])
+        aug  = parseNum(row['__EMPTY_8'])
+        sep  = parseNum(row['__EMPTY_9'])
+        oct  = parseNum(row['__EMPTY_10'])
+        nov  = parseNum(row['__EMPTY_11'])
+        dec  = parseNum(row['__EMPTY_12'])
+        total        = parseNum(row['__EMPTY_13'])
+        sharesAmt    = parseNum(row['__EMPTY_14'])
+        admin        = parseNum(row['__EMPTY_15'])
+        savings      = parseNum(row['__EMPTY_16'])
+        mandatory    = parseNum(row['__EMPTY_17'])
+        withdrawable = parseNum(row['__EMPTY_18'])
+        requested    = parseNum(row['__EMPTY_19'])
+        difference   = parseNum(row['__EMPTY_20'])
+        noOfShares   = parseNum(row['__EMPTY_21'])
+      }
 
       // Try to match existing member using fuzzy matching (skip for PHASE 3 to prevent mixing investors into general members)
       let existingMember = null
@@ -669,7 +626,7 @@ export const useSaccoStore = create((set, get) => ({
         const existingCats = Array.isArray(existingMember.category) ? existingMember.category : [existingMember.category || 'Saving Member']
         const mergedCats = Array.from(new Set([...existingCats, ...categoryArray]))
         await db.saccoMembers.update(memberId, {
-          correctBalance, total, shares: parseNum(row["__EMPTY_14"] || row.SHARES),
+          correctBalance, total, shares: sharesAmt,
           admin, savings, mandatory, withdrawable, requested, difference, noOfShares,
           category: mergedCats
         })
@@ -685,7 +642,7 @@ export const useSaccoStore = create((set, get) => ({
           category: categoryArray,
           photo: '',
           correctBalance, jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec,
-          total, shares: parseNum(row["__EMPTY_14"] || row.SHARES || row.Shares),
+          total, shares: sharesAmt,
           admin, savings, mandatory, withdrawable, requested, difference, noOfShares,
           sheetSource: sheetName,
           createdAt: now
@@ -700,14 +657,28 @@ export const useSaccoStore = create((set, get) => ({
         // Maintain savings table
         await db.saccoSavings.add({ id: crypto.randomUUID(), memberId, savingAmount: total || 0, updatedAt: now })
 
-        // If category contains Investor
-        if (categoryArray.includes('Investor')) {
-          const investment = parseNum(row.InvestmentAmount) || 8000000
-          const moneyMakerPayout = Math.round((investment / 8000000) * 350000)
+        // If category contains Investor or New Farmer (PHASE 3)
+        if (categoryArray.includes('Investor') || categoryArray.includes('New Farmer')) {
+          // For PHASE 3: sharesAmt = program amount, savings = amount paid, difference = balance
+          const programAmt  = isPhase3 ? sharesAmt : 8000000
+          const paidAmt     = isPhase3 ? savings   : 8000000
+          const balanceAmt  = isPhase3 ? difference : 0
+          const investorType = categoryArray.includes('New Farmer') ? 'New Farmer' : 'Money Maker'
+          const moneyMakerPayout = Math.round((programAmt / 8000000) * 350000)
+          const isCleared = balanceAmt === 0 && paidAmt > 0
           await db.saccoInvestors.add({
-            id: crypto.randomUUID(), memberId, category: 'Money Maker',
-            investorType: 'Money Maker', investmentAmount: investment,
-            moneyMakerAmount: moneyMakerPayout, cowsPerYear: 0, createdAt: now
+            id: crypto.randomUUID(), memberId,
+            name: cleanedName,
+            category: investorType,
+            investorType,
+            investmentPhase: 'Phase 3',
+            programAmount: programAmt,
+            investmentAmount: paidAmt,
+            balance: balanceAmt,
+            moneyMakerAmount: moneyMakerPayout,
+            cowsPerYear: 0,
+            status: isCleared ? 'CLEARED' : 'PENDING',
+            createdAt: now
           })
         }
       }
@@ -851,5 +822,58 @@ export const useSaccoStore = create((set, get) => ({
     rows.unshift(headerRow)
     
     return rows
+  },
+
+  importInvestmentExcel: async (data) => {
+    set({ loading: true })
+    const now = new Date().toISOString()
+    const members = await db.saccoMembers.toArray()
+    
+    // Skip empty rows and the header row
+    const actualData = data.filter(row => row['__EMPTY'] && row['__EMPTY'] !== 'NAMES')
+
+    for (const row of actualData) {
+      const nameVal = String(row['__EMPTY']).trim()
+      if (!nameVal) continue
+
+      let matchedMember = findMatchingMember(members, nameVal)
+      let memberId
+
+      if (!matchedMember) {
+        memberId = crypto.randomUUID()
+        const memberRecord = {
+          id: memberId, name: cleanName(nameVal), phone: '', nin: '', category: ['Investor'], photo: '',
+          correctBalance: 0, jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0,
+          total: 50000, shares: 0, admin: 50000, savings: 0, mandatory: 0, withdrawable: 0, requested: 0, difference: 0, noOfShares: 0,
+          createdAt: now
+        }
+        await db.saccoMembers.add(memberRecord)
+        members.push(memberRecord)
+        await db.saccoShares.add({ id: crypto.randomUUID(), memberId, shareCount: 1, createdAt: now })
+        await db.saccoSavings.add({ id: crypto.randomUUID(), memberId, savingAmount: 0, updatedAt: now })
+      } else {
+        memberId = matchedMember.id
+        const existingCats = Array.isArray(matchedMember.category) ? matchedMember.category : [matchedMember.category || 'Saving Member']
+        if (!existingCats.includes('Investor')) {
+          await db.saccoMembers.update(memberId, { category: [...existingCats, 'Investor'] })
+        }
+      }
+
+      await db.saccoInvestors.add({
+        id: crypto.randomUUID(),
+        memberId,
+        category: 'Money Maker',
+        investorType: 'Money Maker',
+        investmentPhase: 'Phase 1 & 2',
+        marketingStrategy: false,
+        investmentAmount: Number(row['__EMPTY_2']) || 0,
+        programAmount: Number(row['__EMPTY_1']) || 0,
+        balance: Number(row['__EMPTY_3']) || 0,
+        status: row['__EMPTY_4'] || '',
+        cowsPerYear: 0,
+        createdAt: now
+      })
+    }
+    await get().loadSaccoData()
   }
 }))

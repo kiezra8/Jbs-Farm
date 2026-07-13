@@ -45,6 +45,12 @@ export default function Dashboard() {
   useEffect(() => {
     Promise.all([loadAnimals(), loadHealth(), loadBreeding(), loadMilk(), loadFeed(), loadTransactions(), loadStaff(), loadNotifications()])
       .then(() => {
+        // Voice alarm for missing milk
+        if (getTodayTotal() === 0 && window.speechSynthesis) {
+          const utterance = new SpeechSynthesisUtterance("Milk is missing for today. Please update the milk records.");
+          window.speechSynthesis.speak(utterance);
+        }
+
         generateInsights().then(ins => {
           setInsights(ins)
           setLoadingInsights(false)

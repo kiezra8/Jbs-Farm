@@ -16,7 +16,7 @@ export default function Finance() {
   const [selectedTransaction, setSelectedTransaction] = useState(null)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
 
-  const initialForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', category: '', amount: '', description: '', reference: '' }
+  const initialForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', source: 'Bank', category: '', amount: '', description: '', reference: '' }
   const [formData, setFormData] = useState(initialForm)
 
   useEffect(() => { loadTransactions() }, [])
@@ -40,9 +40,10 @@ export default function Finance() {
   const columns = [
     { key: 'date', label: 'Date', render: (val) => format(new Date(val), 'dd MMM yyyy') },
     { key: 'category', label: 'Category', render: (val) => <span className="font-medium text-white">{val}</span> },
-    { key: 'type', label: 'Type', render: (val) => <Badge variant={val === 'Income' ? 'green' : 'red'}>{val}</Badge> },
-    { key: 'amount', label: 'Amount', render: (val, row) => (
-      <span className={row.type === 'Income' ? 'text-green-400' : 'text-red-400'}>{row.type === 'Income' ? '+' : '-'}{formatUGX(val)}</span>
+    { key: 'source', label: 'Source', render: (val) => <span className="text-slate-300">{val || 'Bank'}</span> },
+    { key: 'type', label: 'Type', render: (val) => <Badge variant="red">{val}</Badge> },
+    { key: 'amount', label: 'Amount', render: (val) => (
+      <span className="text-red-400">-{formatUGX(val)}</span>
     )},
     { key: 'description', label: 'Description', render: (val) => val || '—' },
     { key: 'reference', label: 'Ref', render: (val) => val || '—' },
@@ -52,7 +53,8 @@ export default function Finance() {
           setEditingTransaction(row)
           setFormData({
             date: row.date,
-            type: row.type,
+            type: 'Expense',
+            source: row.source || 'Bank',
             category: row.category,
             amount: String(row.amount),
             description: row.description,
@@ -69,9 +71,7 @@ export default function Finance() {
     )}
   ]
 
-  const categories = formData.type === 'Income' 
-    ? ['Milk Sales', 'Animal Sales', 'Breeding Fees', 'Government Subsidy', 'Other Income']
-    : ['Feed', 'Veterinary', 'Salaries', 'Equipment', 'Utilities', 'Transport', 'Maintenance', 'Other Expense']
+  const categories = ['Feed', 'Veterinary', 'Salaries', 'Equipment', 'Utilities', 'Transport', 'Maintenance', 'Other Expense']
 
   return (
     <PinGuard>
@@ -114,9 +114,10 @@ export default function Finance() {
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Transaction Type *</label>
-              <select required className="input-field" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value, category: ''})}>
-                <option>Expense</option><option>Income</option>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Payment Source *</label>
+              <select required className="input-field" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value})}>
+                <option value="Bank">Bank Account</option>
+                <option value="Petty Cash">Petty Cash</option>
               </select>
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>

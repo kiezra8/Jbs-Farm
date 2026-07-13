@@ -77,6 +77,8 @@ export default function Sacco() {
   // Savings states
   const [savingsInput, setSavingsInput] = useState('0')
   const [savingsMode, setSavingsMode] = useState('deposit') // deposit, withdraw
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [isBanked, setIsBanked] = useState(false)
   
   // Convert states
   const [convertSharesInput, setConvertSharesInput] = useState('1')
@@ -92,10 +94,11 @@ export default function Sacco() {
   }
   const [investorForm, setInvestorForm] = useState(initialInvestorForm)
   
-  const initialTxForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Income', source: 'Bank', category: 'Share Purchase', amount: '', description: '' }
+  const initialTxForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Income', category: 'Share Purchase', amount: '', description: '', paymentMethod: 'Cash', isBanked: false }
   const [txForm, setTxForm] = useState(initialTxForm)
 
   const excelInputRef = useRef(null)
+  const investorExcelInputRef = useRef(null)
 
   const [isUnlocked, setIsUnlocked] = useState(() => sessionStorage.getItem('saccoUnlocked') === 'true')
   const [pinInput, setPinInput] = useState('')
@@ -120,6 +123,27 @@ export default function Sacco() {
   }
 
   // ─── Excel Import handler ──────────────────────────────────────────────────
+  const handleInvestmentExcelImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        await useSaccoStore.getState().importInvestmentExcel(data)
+        alert('Investment Excel imported successfully!')
+      } catch (err) {
+        console.error(err)
+        alert('Failed to parse Investment Excel file')
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
+
   const handleExcelImport = (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -140,7 +164,7 @@ export default function Sacco() {
           'PHASE 3': '2026',                  // Phase 3 investors
         }
 
-        const MEMBER_SHEETS = ['GENERAL MEMBERSHIP', 'JUNE MEMBERSHIP', 'PIONEER', 'PHASE 3']
+        const MEMBER_SHEETS = ['GENERAL MEMBERSHIP', 'JUNE MEMBERSHIP', 'PIONEER']
 
         for (const sheetName of wb.SheetNames) {
           if (!MEMBER_SHEETS.includes(sheetName)) continue
@@ -204,7 +228,21 @@ export default function Sacco() {
   const handleSaveShares = async (e) => {
     e.preventDefault()
     if (editingSharesMember) {
-      await updateShares(editingSharesMember.id, shareCountInput)
+      const newCount = Number(shareCountInput) || 1
+      const oldCount = editingSharesMember.shareCount || 1
+      await updateShares(editingSharesMember.id, newCount)
+      if (newCount > oldCount) {
+        await addTransaction({
+          date: format(new Date(), 'yyyy-MM-dd'),
+          type: 'Income',
+          source: isBanked ? 'Bank' : paymentMethod,
+          category: 'Share Purchase',
+          amount: (newCount - oldCount) * 100000,
+          paymentMethod,
+          isBanked,
+          description: `Share purchase for ${editingSharesMember.name} (${oldCount} → ${newCount} shares)`
+        })
+      }
     }
     setIsSharesModalOpen(false)
     setEditingSharesMember(null)
@@ -223,9 +261,11 @@ export default function Sacco() {
       await addTransaction({
         date: format(new Date(), 'yyyy-MM-dd'),
         type: savingsMode === 'deposit' ? 'Income' : 'Expense',
-        source: 'Bank',
-        category: 'Membership Fee',
+        source: isBanked ? 'Bank' : paymentMethod,
+        category: 'Savings',
         amount: delta,
+        paymentMethod,
+        isBanked,
         description: `${savingsMode === 'deposit' ? 'Deposited' : 'Withdrew'} savings for ${editingSavingsMember.name}`
       })
     }
@@ -276,23 +316,26 @@ export default function Sacco() {
     return cats.includes('Saving Member') || cats.includes('Pioneer')
   }
 
+  const matchesFilter = (m) => {
+    const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          m.phone?.includes(searchQuery) || 
+                          m.nin?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesCategory = categoryFilter 
+      ? (Array.isArray(m.category) ? m.category.includes(categoryFilter) : m.category === categoryFilter) 
+      : true
+    return matchesSearch && matchesCategory
+  }
+
   const filteredMembers = members
     .filter(m => hasSavingCategory(m.category))
+    .filter(matchesFilter)
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     .map((m, i) => ({ ...m, index: i + 1 }))
-    .filter(m => {
-      const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            m.phone?.includes(searchQuery) || 
-                            m.nin?.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesCategory = categoryFilter 
-        ? (Array.isArray(m.category) ? m.category.includes(categoryFilter) : m.category === categoryFilter) 
-        : true
-      return matchesSearch && matchesCategory
-    })
 
   const sharesData = members
     .filter(m => hasSavingCategory(m.category))
+    .filter(matchesFilter)
     .map(m => {
       const shareObj = shares.find(s => s.memberId === m.id)
       const count = shareObj?.shareCount || 1 // Minimum 1 share enforced
@@ -303,10 +346,11 @@ export default function Sacco() {
         shareCount: count,
         value: count * 100000
       }
-    }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+    })
 
   const savingsData = members
     .filter(m => hasSavingCategory(m.category))
+    .filter(matchesFilter)
     .map(m => {
       const savingObj = savings.find(s => s.memberId === m.id)
       const count = savingObj?.savingAmount || 0
@@ -316,16 +360,22 @@ export default function Sacco() {
         category: m.category,
         savingAmount: count
       }
-    }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+    })
 
   const investorsData = investors.map(i => {
     const member = members.find(m => m.id === i.memberId)
     return {
       ...i,
-      name: member?.name || 'Unknown',
-      memberCategory: member?.category || 'Investor'
+      name: member?.name || i.name || 'Unknown',
+      memberCategory: member?.category || i.category || 'Investor'
     }
-  }).filter(i => i.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+  }).filter(i => {
+    const matchesSearch = i.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesCat = categoryFilter ? (i.category === categoryFilter || i.memberCategory === categoryFilter || (Array.isArray(i.memberCategory) && i.memberCategory.includes(categoryFilter))) : true
+    return matchesSearch && matchesCat
+  })
+  
+  const phase3Count = investorsData.filter(i => i.investmentPhase === 'Phase 3').length
 
   const txData = [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date))
 
@@ -515,19 +565,33 @@ export default function Sacco() {
     )}
   ]
 
+  const PM_COLOR = {
+    'Cash':     'bg-amber-500/15 text-amber-400 border border-amber-500/20',
+    'MTN MM':   'bg-yellow-500/15 text-yellow-300 border border-yellow-500/20',
+    'Airtel MM':'bg-red-500/15 text-red-400 border border-red-500/20',
+    'Bank':     'bg-blue-500/15 text-blue-400 border border-blue-500/20',
+    'Cheque':   'bg-violet-500/15 text-violet-400 border border-violet-500/20',
+    'Other':    'bg-slate-500/15 text-slate-400 border border-slate-500/20',
+  }
+
   const txColumns = [
-    { key: 'date', label: 'Date', render: (val) => format(new Date(val), 'dd MMM yyyy') },
+    { key: 'date', label: 'Date', render: (val) => {
+      try { return format(new Date(val), 'dd MMM yyyy') } catch { return val }
+    }},
     { key: 'type', label: 'Type', render: (val) => (
       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${val === 'Income' ? 'bg-green-500/10 text-green-400' : val === 'Expense' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
         {val}
       </span>
     )},
-    { key: 'source', label: 'Source/Destination', render: (val, row) => (
-      <span className="text-slate-300">
-        {val} {row.type === 'Transfer' && <span className="text-xs text-slate-500">({row.source === 'Bank' ? 'Bank → Petty Cash' : 'Petty Cash → Bank'})</span>}
-      </span>
-    )},
-    { key: 'category', label: 'Category' },
+    { key: 'category', label: 'Category', render: (val) => <span className="text-slate-300 text-xs">{val}</span> },
+    { key: 'paymentMethod', label: 'Via', render: (val) => {
+      const pm = val || 'Cash'
+      return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${PM_COLOR[pm] || PM_COLOR['Other']}`}>{pm}</span>
+    }},
+    { key: 'isBanked', label: 'Banked', render: (val) => val
+      ? <span className="text-emerald-400 text-xs font-semibold flex items-center gap-1">✓ Banked</span>
+      : <span className="text-orange-400 text-xs font-semibold flex items-center gap-1">⚠ Not Banked</span>
+    },
     { key: 'amount', label: 'Amount', render: (val, row) => (
       <span className={`font-semibold ${row.type === 'Income' ? 'text-green-400' : row.type === 'Expense' ? 'text-red-400' : 'text-blue-400'}`}>
         {row.type === 'Expense' ? '-' : ''}{formatUGX(val)}
@@ -591,19 +655,31 @@ export default function Sacco() {
           </div>
         </div>
 
-        {/* Investors Header Button */}
-        {activeTab === 'investors' && (
+        {/* Seed Data loading removed */}        {activeTab === 'investors' && (
           <div className="flex gap-2 w-full sm:w-auto flex-wrap">
+            <input 
+              type="file" 
+              ref={investorExcelInputRef} 
+              onChange={handleInvestmentExcelImport} 
+              accept=".xlsx,.xls,.csv" 
+              className="hidden" 
+            />
             <button 
-              onClick={async () => {
-                if (window.confirm('This will clear and re-import all investor data from the seed file. Continue?')) {
-                  await useSaccoStore.getState().importInvestors()
-                  alert('Investors imported successfully!')
-                }
-              }} 
+              onClick={() => investorExcelInputRef.current.click()} 
               className="btn-secondary text-indigo-400 border border-indigo-500/30 flex items-center gap-2"
             >
-              <Upload size={16} /> Load Investors from File
+              <Upload size={16} /> Import Investment Excel
+            </button>
+            <button 
+              onClick={async () => {
+                if (window.confirm('WARNING: This will delete all investors imported from the general excel (Phase 3). Are you sure?')) {
+                  await useSaccoStore.getState().clearPhase3Investors()
+                  alert('General investors cleared.')
+                }
+              }} 
+              className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-2"
+            >
+              <Trash2 size={16} /> Clear General Investors
             </button>
           </div>
         )}
@@ -639,12 +715,25 @@ export default function Sacco() {
           </div>
         )}
         {activeTab === 'accounts' && (
-          <button 
-            onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} 
-            className="btn-primary flex items-center gap-2 w-full sm:w-auto"
-          >
-            <Plus size={16} /> Add Transaction
-          </button>
+          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
+            <button 
+              onClick={async () => {
+                if (window.confirm('WARNING: This will completely wipe all SACCO data (Members, Shares, Savings, Investors, Transactions). Are you sure?')) {
+                  await useSaccoStore.getState().clearDatabase()
+                  window.location.reload()
+                }
+              }} 
+              className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-2"
+            >
+              <Trash2 size={16} /> Clear Database & Reload
+            </button>
+            <button 
+              onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} 
+              className="btn-primary flex items-center gap-2"
+            >
+              <Plus size={16} /> Add Transaction
+            </button>
+          </div>
         )}
       </div>
 
@@ -680,43 +769,35 @@ export default function Sacco() {
 
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Side Navigation */}
-        <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible w-full lg:w-56 flex-shrink-0 scrollbar-none">
-          <button 
-            onClick={() => setActiveTab('members')} 
-            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'members' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
-          >
-            <Users size={18} /> Members
-          </button>
-          <button 
-            onClick={() => setActiveTab('shares')} 
-            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'shares' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
-          >
-            <Coins size={18} /> Share Counting
-          </button>
-          <button 
-            onClick={() => setActiveTab('savings')} 
-            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'savings' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
-          >
-            <PiggyBank size={18} /> Savings
-          </button>
-          <button 
-            onClick={() => setActiveTab('investors')} 
-            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'investors' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
-          >
-            <TrendingUp size={18} /> Investors
-          </button>
-          <button 
-            onClick={() => setActiveTab('accounts')} 
-            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'accounts' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
-          >
-            <Wallet size={18} /> Accounts
-          </button>
+        <div className="hidden lg:flex lg:flex-col gap-2 w-56 flex-shrink-0">
+          <nav className="flex flex-col space-y-1" aria-label="Tabs">
+            {[
+              { id: 'members', label: `Members (${filteredMembers.length})`, icon: Users },
+              { id: 'shares', label: `Shares (${sharesData.length})`, icon: Coins },
+              { id: 'savings', label: `Savings (${savingsData.length})`, icon: PiggyBank },
+              { id: 'investors', label: `Investors (${investorsData.length})`, icon: TrendingUp },
+              { id: 'accounts', label: 'Accounts', icon: Wallet },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`${
+                  activeTab === id
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'
+                } px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors`}
+              >
+                <Icon size={18} />
+                {label}
+              </button>
+            ))}
+          </nav>
           
-          <div className="h-px bg-white/10 my-2 hidden lg:block"></div>
+          <div className="h-px bg-white/10 my-2"></div>
           
           <button 
             onClick={() => setActiveTab('finance')} 
-            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors flex-shrink-0 ${activeTab === 'finance' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors ${activeTab === 'finance' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
           >
             <DollarSign size={18} /> Farm Finances
           </button>
@@ -797,9 +878,81 @@ export default function Sacco() {
                 <DataTable columns={investorsColumns} data={investorsData} pageSize={10} />
               )}
 
-              {activeTab === 'accounts' && (
-                <DataTable columns={txColumns} data={txData} pageSize={10} />
-              )}
+              {activeTab === 'accounts' && (() => {
+                const today = format(new Date(), 'yyyy-MM-dd')
+                const incomeTx = transactions.filter(t => t.type === 'Income')
+                const allUnbanked = incomeTx.filter(t => !t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+
+                const dailyList = incomeTx.filter(t => t.date >= today)
+                const dailyTotal = dailyList.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                const dailyBanked = dailyList.filter(t => t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                const dailyUnbanked = dailyTotal - dailyBanked
+                const daily = { total: dailyTotal, banked: dailyBanked, unbanked: dailyUnbanked, count: dailyList.length }
+
+                const byMethod = {}
+                incomeTx.filter(t => !t.isBanked).forEach(t => {
+                  const pm = t.paymentMethod || 'Cash'
+                  byMethod[pm] = (byMethod[pm] || 0) + (Number(t.amount) || 0)
+                })
+
+                return (
+                  <div className="space-y-6">
+                    {/* Period Summary Cards */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <TrendingUp size={14} /> Income Summary (All Types: Savings, Shares, Investments)
+                      </h3>
+                      <div className="grid grid-cols-1 gap-4">
+                        {[
+                          { label: 'Today', data: daily }
+                        ].map(({ label, data }) => (
+                          <div key={label} className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{label}</p>
+                            <p className="text-xl font-bold text-white">{formatUGX(data.total)}</p>
+                            <div className="w-full bg-white/10 rounded-full h-1.5">
+                              <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: data.total > 0 ? `${Math.min(100, (data.banked / data.total) * 100).toFixed(0)}%` : '0%' }} />
+                            </div>
+                            <div className="flex justify-between text-[10px] font-medium">
+                              <span className="text-emerald-400">✓ Banked: {formatUGX(data.banked)}</span>
+                              <span className="text-orange-400">⚠ Unbanked: {formatUGX(data.unbanked)}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500">{data.count} transaction{data.count !== 1 ? 's' : ''}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Unbanked by Payment Method */}
+                    {allUnbanked > 0 && (
+                      <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-semibold text-orange-400 flex items-center gap-2">
+                            <Wallet size={14} /> Cash / MM On Hand (Not Yet Banked)
+                          </h3>
+                          <span className="text-lg font-bold text-orange-300">{formatUGX(allUnbanked)}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(byMethod).map(([pm, amt]) => (
+                            <div key={pm} className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${PM_COLOR[pm] || PM_COLOR['Other']}`}>
+                              <span>{pm}:</span>
+                              <span className="font-bold">{formatUGX(amt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-orange-400/70 mt-2">⚠ Action required: This money has not been deposited to the bank yet.</p>
+                      </div>
+                    )}
+
+                    {/* Full Transaction Ledger */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <DollarSign size={14} /> All Transactions Ledger
+                      </h3>
+                      <DataTable columns={txColumns} data={txData} pageSize={15} />
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>
@@ -996,6 +1149,29 @@ export default function Sacco() {
             <span className="text-sm font-bold text-white">{formatUGX((Number(shareCountInput) || 1) * 100000)}</span>
           </div>
 
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-2">Payment Method</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['Cash','MTN MM','Airtel MM','Bank','Cheque','Other'].map(m => (
+                <button key={m} type="button" onClick={() => setPaymentMethod(m)}
+                  className={`py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    paymentMethod === m ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                  }`}>{m}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+            <div>
+              <p className="text-xs font-semibold text-white">Already Banked?</p>
+              <p className="text-[10px] text-slate-500">Toggle on if cash/MM has already been deposited to bank</p>
+            </div>
+            <button type="button" onClick={() => setIsBanked(!isBanked)}
+              className={`w-10 h-5 rounded-full transition-colors relative ${ isBanked ? 'bg-emerald-500' : 'bg-white/20'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ isBanked ? 'translate-x-5' : ''}`}/>
+            </button>
+          </div>
+
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
             <button type="button" className="btn-secondary" onClick={() => setIsSharesModalOpen(false)}>Cancel</button>
             <button type="submit" className="btn-primary">Update Shares</button>
@@ -1042,6 +1218,29 @@ export default function Sacco() {
               value={savingsInput} 
               onChange={e => setSavingsInput(e.target.value)} 
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-2">Payment Method</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['Cash','MTN MM','Airtel MM','Bank','Cheque','Other'].map(m => (
+                <button key={m} type="button" onClick={() => setPaymentMethod(m)}
+                  className={`py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    paymentMethod === m ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                  }`}>{m}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+            <div>
+              <p className="text-xs font-semibold text-white">Already Banked?</p>
+              <p className="text-[10px] text-slate-500">Toggle on if cash/MM has already been deposited to bank</p>
+            </div>
+            <button type="button" onClick={() => setIsBanked(!isBanked)}
+              className={`w-10 h-5 rounded-full transition-colors relative ${ isBanked ? 'bg-emerald-500' : 'bg-white/20'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ isBanked ? 'translate-x-5' : ''}`}/>
+            </button>
           </div>
 
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
@@ -1240,21 +1439,7 @@ export default function Sacco() {
                 onChange={e => setTxForm({ ...txForm, type: e.target.value })}
               >
                 <option value="Income">Income</option>
-                <option value="Expense">Expense</option>
                 <option value="Transfer">Transfer (e.g. Bank to Petty Cash)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Source / Account *</label>
-              <select 
-                required 
-                className="input-field" 
-                value={txForm.source} 
-                onChange={e => setTxForm({ ...txForm, source: e.target.value })}
-              >
-                <option value="Bank">Bank Account</option>
-                <option value="Petty Cash">Petty Cash</option>
               </select>
             </div>
 
@@ -1267,6 +1452,7 @@ export default function Sacco() {
                 onChange={e => setTxForm({ ...txForm, category: e.target.value })}
               >
                 <option value="Share Purchase">Share Purchase</option>
+                <option value="Savings">Savings Deposit</option>
                 <option value="Membership Fee">Membership Fee</option>
                 <option value="Pioneer Contribution">Pioneer Contribution</option>
                 <option value="Investment Deposit">Investment Deposit</option>
@@ -1287,6 +1473,29 @@ export default function Sacco() {
                 value={txForm.amount} 
                 onChange={e => setTxForm({ ...txForm, amount: e.target.value })} 
               />
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-2">Payment Method *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['Cash','MTN MM','Airtel MM','Bank','Cheque','Other'].map(m => (
+                  <button key={m} type="button" onClick={() => setTxForm({ ...txForm, paymentMethod: m })}
+                    className={`py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                      txForm.paymentMethod === m ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                    }`}>{m}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="col-span-2 flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div>
+                <p className="text-xs font-semibold text-white">Already Banked?</p>
+                <p className="text-[10px] text-slate-500">Toggle on if this money is already in the bank account</p>
+              </div>
+              <button type="button" onClick={() => setTxForm({ ...txForm, isBanked: !txForm.isBanked })}
+                className={`w-10 h-5 rounded-full transition-colors relative ${ txForm.isBanked ? 'bg-emerald-500' : 'bg-white/20'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ txForm.isBanked ? 'translate-x-5' : ''}`}/>
+              </button>
             </div>
 
             <div className="col-span-2">
