@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign } from 'lucide-react'
+import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download } from 'lucide-react'
 import { useSaccoStore } from '../../store/useSaccoStore'
 import DataTable from '../../components/ui/DataTable'
 import Modal from '../../components/ui/Modal'
@@ -30,7 +30,9 @@ export default function Sacco() {
     addTransaction, 
     deleteTransaction,
     importFromExcel,
-    getFinancials 
+    getFinancials,
+    selectedYear,
+    setSelectedYear
   } = useSaccoStore()
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -63,9 +65,13 @@ export default function Sacco() {
   const [categoryFilter, setCategoryFilter] = useState('')
 
   // Form states
-  const initialMemberForm = { name: '', phone: '', nin: '', category: 'Saving Member', photo: '' }
+  const initialMemberForm = { 
+    name: '', phone: '', nin: '', category: ['Saving Member'], photo: '',
+    correctBalance: 0, jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
+    jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, total: 0, shares: 0,
+    admin: 0, savings: 0, mandatory: 0, withdrawable: 0, requested: 0, difference: 0, noOfShares: 0
+  }
   const [memberForm, setMemberForm] = useState(initialMemberForm)
-  
   const [shareCountInput, setShareCountInput] = useState('1')
   
   // Savings states
@@ -76,7 +82,14 @@ export default function Sacco() {
   const [convertSharesInput, setConvertSharesInput] = useState('1')
   
   // Investor Form states
-  const initialInvestorForm = { category: 'Money Maker', investmentAmount: '8000000', cowsPerYear: '0' }
+  const initialInvestorForm = { 
+    category: 'Money Maker', 
+    investorType: 'Money Maker',
+    investmentPhase: 'Initial',
+    marketingStrategy: false,
+    investmentAmount: '8000000', 
+    cowsPerYear: '0' 
+  }
   const [investorForm, setInvestorForm] = useState(initialInvestorForm)
   
   const initialTxForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Income', source: 'Bank', category: 'Share Purchase', amount: '', description: '' }
@@ -116,33 +129,72 @@ export default function Sacco() {
       try {
         const bstr = evt.target.result
         const wb = XLSX.read(bstr, { type: 'binary' })
-        const wsname = wb.SheetNames[0]
-        const ws = wb.Sheets[wsname]
-        const data = XLSX.utils.sheet_to_json(ws)
-        
-        // expected keys in excel: Name, Phone, NIN, Category, Shares, Savings, InvestmentAmount
-        if (data.length > 0) {
-          await importFromExcel(data)
-          alert(`Successfully imported ${data.length} SACCO records!`)
+
+        let totalImported = 0
+
+        // Define financial year mapping based on sheet names
+        const YEAR_MAP = {
+          'GENERAL MEMBERSHIP': '2026',       // Jan-Dec 2026
+          'JUNE MEMBERSHIP': '2026-2027',     // June 2026 - June 2027
+          'PIONEER': '2026',                  // Pioneer sheet uses 2026
+          'PHASE 3': '2026',                  // Phase 3 investors
+        }
+
+        const MEMBER_SHEETS = ['GENERAL MEMBERSHIP', 'JUNE MEMBERSHIP', 'PIONEER', 'PHASE 3']
+
+        for (const sheetName of wb.SheetNames) {
+          if (!MEMBER_SHEETS.includes(sheetName)) continue
+
+          const ws = wb.Sheets[sheetName]
+          const data = XLSX.utils.sheet_to_json(ws)
+
+          if (data.length > 0) {
+            const financialYear = YEAR_MAP[sheetName] || '2026'
+            await importFromExcel(data, financialYear, sheetName)
+            totalImported += data.length
+            console.log(`✅ Imported ${data.length} records from sheet "${sheetName}" for financial year ${financialYear}`)
+          }
+        }
+
+        if (totalImported > 0) {
+          alert(`Successfully imported ${totalImported} SACCO records across all sheets!\n\n• 2026 (Jan-Dec) = General Membership\n• 2026-2027 (Jun-Jun) = June Membership`)
         } else {
-          alert('Excel file is empty.')
+          // Fall back to single-sheet mode for custom files
+          const wsname = wb.SheetNames[0]
+          const ws = wb.Sheets[wsname]
+          const data = XLSX.utils.sheet_to_json(ws)
+          if (data.length > 0) {
+            await importFromExcel(data, selectedYear, wsname)
+            alert(`Successfully imported ${data.length} SACCO records for financial year ${selectedYear}!`)
+          } else {
+            alert('Excel file is empty.')
+          }
         }
       } catch (err) {
         console.error('Import failed:', err)
-        alert('Failed to parse excel file. Make sure columns match: Name, Phone, NIN, Category, Shares, Savings, InvestmentAmount')
+        alert('Failed to parse excel file. Please check the file format.')
       }
       e.target.value = null // reset
     }
     reader.readAsBinaryString(file)
   }
 
-  // ─── Save Handlers ────────────────────────────────────────────────────────
+  // ─── Excel Export handler ───────────────────────────────────────────────
+  const handleExcelExport = () => {
+    const rows = useSaccoStore.getState().exportToExcel()
+    const ws = XLSX.utils.json_to_sheet(rows, { skipHeader: true })
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'SACCO Members')
+    XLSX.writeFile(wb, `SACCO_Members_Export_${format(new Date(), 'yyyy-MM-dd')}.xlsx`)
+  }
+
+  // ─── Save Handlers ─────────────────────────────────────────────────────────────────────
   const handleSaveMember = async (e) => {
     e.preventDefault()
     if (editingMember) {
-      await updateMember(editingMember.id, memberForm)
+      await updateMember(editingMember.id, memberForm, selectedYear)
     } else {
-      await addMember(memberForm)
+      await addMember(memberForm, selectedYear)
     }
     setIsMemberModalOpen(false)
     setEditingMember(null)
@@ -199,7 +251,10 @@ export default function Sacco() {
     e.preventDefault()
     if (editingInvestor) {
       await updateInvestor(editingInvestor.id, {
-        category: investorForm.category,
+        category: investorForm.investorType || investorForm.category,
+        investorType: investorForm.investorType || investorForm.category,
+        investmentPhase: investorForm.investmentPhase || 'Initial',
+        marketingStrategy: investorForm.marketingStrategy || false,
         investmentAmount: Number(investorForm.investmentAmount) || 8000000,
         cowsPerYear: Number(investorForm.cowsPerYear) || 0
       })
@@ -216,36 +271,52 @@ export default function Sacco() {
   }
 
   // ─── Tables Data Preparation ───────────────────────────────────────────────
-  const filteredMembers = members.filter(m => {
-    const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          m.phone?.includes(searchQuery) || 
-                          m.nin?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = categoryFilter ? m.category === categoryFilter : true
-    return matchesSearch && matchesCategory
-  })
+  const hasSavingCategory = (catVal) => {
+    const cats = Array.isArray(catVal) ? catVal : [catVal || 'Saving Member']
+    return cats.includes('Saving Member') || cats.includes('Pioneer')
+  }
 
-  const sharesData = members.map(m => {
-    const shareObj = shares.find(s => s.memberId === m.id)
-    const count = shareObj?.shareCount || 1 // Minimum 1 share enforced
-    return {
-      id: m.id,
-      name: m.name,
-      category: m.category,
-      shareCount: count,
-      value: count * 100000
-    }
-  }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredMembers = members
+    .filter(m => hasSavingCategory(m.category))
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .map((m, i) => ({ ...m, index: i + 1 }))
+    .filter(m => {
+      const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            m.phone?.includes(searchQuery) || 
+                            m.nin?.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesCategory = categoryFilter 
+        ? (Array.isArray(m.category) ? m.category.includes(categoryFilter) : m.category === categoryFilter) 
+        : true
+      return matchesSearch && matchesCategory
+    })
 
-  const savingsData = members.map(m => {
-    const savingObj = savings.find(s => s.memberId === m.id)
-    const count = savingObj?.savingAmount || 0
-    return {
-      id: m.id,
-      name: m.name,
-      category: m.category,
-      savingAmount: count
-    }
-  }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+  const sharesData = members
+    .filter(m => hasSavingCategory(m.category))
+    .map(m => {
+      const shareObj = shares.find(s => s.memberId === m.id)
+      const count = shareObj?.shareCount || 1 // Minimum 1 share enforced
+      return {
+        id: m.id,
+        name: m.name,
+        category: m.category,
+        shareCount: count,
+        value: count * 100000
+      }
+    }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const savingsData = members
+    .filter(m => hasSavingCategory(m.category))
+    .map(m => {
+      const savingObj = savings.find(s => s.memberId === m.id)
+      const count = savingObj?.savingAmount || 0
+      return {
+        id: m.id,
+        name: m.name,
+        category: m.category,
+        savingAmount: count
+      }
+    }).filter(m => m.name?.toLowerCase().includes(searchQuery.toLowerCase()))
 
   const investorsData = investors.map(i => {
     const member = members.find(m => m.id === i.memberId)
@@ -260,6 +331,7 @@ export default function Sacco() {
 
   // ─── Table Columns ─────────────────────────────────────────────────────────
   const memberColumns = [
+    { key: 'index', label: '#', render: (val) => <span className="text-slate-500 font-medium text-xs">{val}</span> },
     { key: 'photo', label: 'Photo', sortable: false, render: (val, row) => (
       <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
         {val ? (
@@ -274,26 +346,37 @@ export default function Sacco() {
         {val}
       </button>
     )},
-    { key: 'phone', label: 'Phone' },
-    { key: 'nin', label: 'NIN' },
+    { key: 'total', label: 'Total Paid', render: (val) => <span className="text-emerald-400 font-bold">{formatUGX(val)}</span> },
+    { key: 'shares', label: 'Shares Amt', render: (val) => formatUGX(val) },
+    { key: 'admin', label: 'Admin Fee', render: (val) => formatUGX(val) },
+    { key: 'noOfShares', label: 'No. Shares', render: (val) => <span className="font-semibold text-white">{val}</span> },
     { key: 'category', label: 'Category', render: (val) => {
       const colors = {
         'Pioneer': 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
         'Investor': 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
         'Saving Member': 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
       }
-      return <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[val] || 'bg-slate-500/10 text-slate-400'}`}>{val}</span>
+      const cats = Array.isArray(val) ? val : [val || 'Saving Member']
+      return (
+        <div className="flex gap-1 flex-wrap">
+          {cats.map(c => (
+            <span key={c} className={`px-2 py-1 rounded-full text-[10px] font-medium ${colors[c] || 'bg-slate-500/10 text-slate-400'}`}>{c}</span>
+          ))}
+        </div>
+      )
     }},
     { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
       <div className="flex items-center gap-2">
         <button onClick={() => {
           setEditingMember(row)
           setMemberForm({
-            name: row.name || '',
-            phone: row.phone || '',
-            nin: row.nin || '',
-            category: row.category || 'Saving Member',
-            photo: row.photo || ''
+            name: row.name || '', phone: row.phone || '', nin: row.nin || '', 
+            category: Array.isArray(row.category) ? row.category : [row.category || 'Saving Member'], 
+            photo: row.photo || '',
+            correctBalance: row.correctBalance || 0, jan: row.jan || 0, feb: row.feb || 0, mar: row.mar || 0, apr: row.apr || 0, may: row.may || 0, jun: row.jun || 0,
+            jul: row.jul || 0, aug: row.aug || 0, sep: row.sep || 0, oct: row.oct || 0, nov: row.nov || 0, dec: row.dec || 0, total: row.total || 0,
+            shares: row.shares || 0, admin: row.admin || 0, savings: row.savings || 0, mandatory: row.mandatory || 0, withdrawable: row.withdrawable || 0,
+            requested: row.requested || 0, difference: row.difference || 0, noOfShares: row.noOfShares || 0
           })
           setIsMemberModalOpen(true)
         }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
@@ -356,59 +439,73 @@ export default function Sacco() {
   ]
 
   const investorsColumns = [
-    { key: 'name', label: 'Investor Name', render: (val, row) => (
-      <button onClick={() => { setDetailedMemberId(row.memberId || row.id); setIsDetailsModalOpen(true); }} className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors text-left underline decoration-emerald-500/30 underline-offset-4">
-        {val}
-      </button>
-    )},
-    { key: 'category', label: 'Category', render: (val) => (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${val === 'Money Maker' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
-        {val}
-      </span>
-    )},
-    { key: 'investmentAmount', label: 'Investment Details', render: (val, row) => {
-      if (row.category === 'Money Maker') {
-        const units = (val || 8000000) / 8000000
-        return (
-          <div>
-            <p className="font-medium text-white">{formatUGX(val || 8000000)}</p>
-            <p className="text-[10px] text-slate-400">({units.toFixed(2)} Units of 8M)</p>
-          </div>
-        )
-      } else {
-        return <span className="text-slate-300">—</span>
-      }
+    { key: 'name', label: 'Investor Name', render: (val, row) => {
+      const isMarketing = row.marketingStrategy
+      const paid = row.investmentAmount || 0
+      const program = row.programAmount || row.investmentAmount || 8000000
+      const cleared = row.status === 'CLEARED' || (paid >= program && program > 0) || paid >= 8000000
+      const markColor = isMarketing 
+        ? 'bg-yellow-500' 
+        : cleared 
+          ? 'bg-emerald-500' 
+          : 'bg-red-500'
+      return (
+        <button onClick={() => { setDetailedMemberId(row.memberId || row.id); setIsDetailsModalOpen(true); }}
+                className="flex items-center gap-2 font-semibold transition-colors text-left hover:text-slate-300">
+          <span className={`w-3 h-3 border border-black/20 ${markColor} shrink-0`}></span>
+          <span className="text-slate-200 underline underline-offset-4 decoration-slate-600">{val}</span>
+        </button>
+      )
     }},
-    { key: 'details', label: 'Annual Payout Rate', sortable: false, render: (_, row) => {
-      if (row.category === 'Money Maker') {
-        const units = (row.investmentAmount || 8000000) / 8000000
-        const calculatedPayout = units * 350000
-        return (
-          <div>
-            <p className="text-emerald-400 font-semibold">{formatUGX(calculatedPayout)} / yr</p>
-            <p className="text-[9px] text-slate-500">350K split/multiplied per 8M unit</p>
-          </div>
-        )
-      } else {
-        return <span className="text-indigo-400 font-semibold">{row.cowsPerYear} cows / yr</span>
-      }
+    { key: 'investorType', label: 'Type', render: (val, row) => {
+      const type = val || row.category || 'Money Maker'
+      return (
+        <span className={`px-2 py-1 rounded-full text-[10px] font-medium ${type === 'Money Maker' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+          {type}
+        </span>
+      )
     }},
-    { key: 'projections', label: '5-Year Projections', sortable: false, render: (_, row) => {
-      if (row.category === 'Money Maker') {
-        const units = (row.investmentAmount || 8000000) / 8000000
-        const totalPayout = units * 350000 * 5
-        return <span className="text-emerald-400 font-semibold">{formatUGX(totalPayout)} total</span>
-      } else {
-        const totalCows = (row.cowsPerYear || 0) * 5
-        return <span className="text-indigo-400 font-semibold">{totalCows} cows total</span>
-      }
+    { key: 'investmentPhase', label: 'Phase', render: (val) => <span className="text-slate-300 text-xs">{val || 'Phase 3'}</span> },
+    { key: 'programAmount', label: 'Program', render: (val, row) => {
+      const program = val || row.investmentAmount || 0
+      return <span className="text-slate-300 font-medium">{formatUGX(program)}</span>
+    }},
+    { key: 'investmentAmount', label: 'Paid', render: (val, row) => {
+      const program = row.programAmount || val || 0
+      const paid = val || 0
+      const cleared = row.status === 'CLEARED' || paid >= program
+      return (
+        <div>
+          <p className={`font-bold ${cleared ? 'text-emerald-400' : 'text-orange-400'}`}>{formatUGX(paid)}</p>
+          {program > 0 && <div className="w-full bg-white/10 rounded-full h-1 mt-1"><div className={`h-1 rounded-full ${cleared ? 'bg-emerald-500' : 'bg-orange-400'}`} style={{width: `${Math.min(100, (paid/program)*100).toFixed(0)}%`}}></div></div>}
+        </div>
+      )
+    }},
+    { key: 'balance', label: 'Balance', render: (val, row) => {
+      const balance = val || (row.programAmount ? row.programAmount - (row.investmentAmount || 0) : 0)
+      return balance > 0 
+        ? <span className="text-red-400 font-semibold">{formatUGX(balance)}</span>
+        : <span className="text-emerald-400 font-semibold">Cleared ✓</span>
+    }},
+    { key: 'status', label: 'Status', render: (val, row) => {
+      const paid = row.investmentAmount || 0
+      const program = row.programAmount || paid
+      const cleared = val === 'CLEARED' || paid >= program
+      const isMarketing = row.marketingStrategy
+      if (isMarketing) return <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/20">Marketing</span>
+      return cleared
+        ? <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">✓ CLEARED</span>
+        : <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/20">✗ PENDING</span>
     }},
     { key: 'actions', label: 'Configure', sortable: false, render: (_, row) => (
       <button onClick={() => {
         setEditingInvestor(row)
         setInvestorForm({
           category: row.category || 'Money Maker',
-          investmentAmount: String(row.investmentAmount || '8000000'),
+          investorType: row.investorType || row.category || 'Money Maker',
+          investmentPhase: row.investmentPhase || 'Phase 3',
+          marketingStrategy: row.marketingStrategy || false,
+          investmentAmount: String(row.investmentAmount || '0'),
           cowsPerYear: String(row.cowsPerYear || '0')
         })
         setIsInvestorModalOpen(true)
@@ -494,9 +591,26 @@ export default function Sacco() {
           </div>
         </div>
 
+        {/* Investors Header Button */}
+        {activeTab === 'investors' && (
+          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
+            <button 
+              onClick={async () => {
+                if (window.confirm('This will clear and re-import all investor data from the seed file. Continue?')) {
+                  await useSaccoStore.getState().importInvestors()
+                  alert('Investors imported successfully!')
+                }
+              }} 
+              className="btn-secondary text-indigo-400 border border-indigo-500/30 flex items-center gap-2"
+            >
+              <Upload size={16} /> Load Investors from File
+            </button>
+          </div>
+        )}
+
         {/* Dynamic header button based on active tab */}
         {activeTab === 'members' && (
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
             <input 
               type="file" 
               ref={excelInputRef} 
@@ -509,6 +623,12 @@ export default function Sacco() {
               className="btn-secondary text-white flex items-center gap-2"
             >
               <Upload size={16} /> Import Excel
+            </button>
+            <button 
+              onClick={handleExcelExport} 
+              className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-2"
+            >
+              <Download size={16} /> Export Excel
             </button>
             <button 
               onClick={() => { setEditingMember(null); setMemberForm(initialMemberForm); setIsMemberModalOpen(true) }} 
@@ -640,6 +760,22 @@ export default function Sacco() {
                         </select>
                       </div>
                     )}
+
+                    {activeTab !== 'accounts' && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                        <span className="text-xs text-slate-400 font-semibold uppercase">FY:</span>
+                        <select 
+                          className="bg-transparent border-none outline-none text-sm font-semibold text-emerald-400" 
+                          value={selectedYear} 
+                          onChange={e => setSelectedYear(e.target.value)}
+                        >
+                          <option value="2026" className="bg-slate-900 text-white">Jan–Dec 2026</option>
+                          <option value="2026-2027" className="bg-slate-900 text-white">Jun 2026 – Jun 2027</option>
+                          <option value="2027" className="bg-slate-900 text-white">Jan–Dec 2027</option>
+                          <option value="2027-2028" className="bg-slate-900 text-white">Jun 2027 – Jun 2028</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -733,6 +869,29 @@ export default function Sacco() {
               />
             </div>
 
+            <div className="col-span-2 space-y-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Categories *</label>
+              <div className="flex flex-wrap gap-4">
+                {['Saving Member', 'Investor', 'Pioneer'].map(cat => (
+                  <label key={cat} className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      className="w-4 h-4 rounded accent-emerald-500"
+                      checked={memberForm.category?.includes(cat) || false}
+                      onChange={(e) => {
+                        const currentCats = memberForm.category || [];
+                        if (e.target.checked) {
+                          setMemberForm({...memberForm, category: [...currentCats, cat]})
+                        } else {
+                          setMemberForm({...memberForm, category: currentCats.filter(c => c !== cat)})
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-medium text-slate-300">{cat}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">NIN (National ID)</label>
               <input 
@@ -743,19 +902,64 @@ export default function Sacco() {
                 onChange={e => setMemberForm({ ...memberForm, nin: e.target.value })} 
               />
             </div>
+            
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Correct Balance (30th Jan 2026)</label>
+              <input 
+                type="number" 
+                className="input-field" 
+                value={memberForm.correctBalance} 
+                onChange={e => setMemberForm({ ...memberForm, correctBalance: e.target.value })} 
+              />
+            </div>
+
+            {/* Financials Overview */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Total</label>
+              <input type="number" className="input-field bg-slate-800" value={memberForm.total} onChange={e => setMemberForm({ ...memberForm, total: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">No. Of Shares</label>
+              <input type="number" className="input-field bg-slate-800" value={memberForm.noOfShares} onChange={e => setMemberForm({ ...memberForm, noOfShares: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Admin Fee</label>
+              <input type="number" className="input-field bg-slate-800" value={memberForm.admin} onChange={e => setMemberForm({ ...memberForm, admin: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Savings</label>
+              <input type="number" className="input-field bg-slate-800" value={memberForm.savings} onChange={e => setMemberForm({ ...memberForm, savings: e.target.value })} />
+            </div>
 
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">Category *</label>
-              <select 
-                required 
-                className="input-field" 
-                value={memberForm.category} 
-                onChange={e => setMemberForm({ ...memberForm, category: e.target.value })}
-              >
-                <option value="Saving Member">Saving Member</option>
-                <option value="Pioneer">Pioneer</option>
-                <option value="Investor">Investor</option>
-              </select>
+              <label className="block text-xs font-medium text-slate-400 mb-2">Category * (select all that apply)</label>
+              <div className="flex flex-wrap gap-2">
+                {['Saving Member', 'Pioneer', 'Investor'].map(cat => {
+                  const selected = Array.isArray(memberForm.category) 
+                    ? memberForm.category.includes(cat) 
+                    : memberForm.category === cat
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        const current = Array.isArray(memberForm.category) ? memberForm.category : [memberForm.category]
+                        const updated = selected ? current.filter(c => c !== cat) : [...current, cat]
+                        setMemberForm({ ...memberForm, category: updated.length ? updated : [cat] })
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                        selected 
+                          ? cat === 'Investor' ? 'bg-purple-500/20 text-purple-400 border-purple-500/40' 
+                            : cat === 'Pioneer' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                            : 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                          : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
 
@@ -896,22 +1100,50 @@ export default function Sacco() {
       <Modal 
         isOpen={isInvestorModalOpen} 
         onClose={() => setIsInvestorModalOpen(false)} 
-        title={`Configure Investor Settings: ${editingInvestor?.name}`}
+        title={`Configure Investor: ${editingInvestor?.name}`}
       >
         <form onSubmit={handleSaveInvestor} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Investor Category</label>
-            <select 
-              className="input-field" 
-              value={investorForm.category} 
-              onChange={e => setInvestorForm({ ...investorForm, category: e.target.value })}
-            >
-              <option value="Money Maker">Money Maker</option>
-              <option value="New Farmer">New Farmer</option>
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Investor Type</label>
+              <select 
+                className="input-field" 
+                value={investorForm.investorType || investorForm.category} 
+                onChange={e => setInvestorForm({ ...investorForm, investorType: e.target.value, category: e.target.value })}
+              >
+                <option value="Money Maker">Money Maker</option>
+                <option value="New Farmer">New Farmer</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder="e.g. Phase 1, Phase 3..."
+                value={investorForm.investmentPhase} 
+                onChange={e => setInvestorForm({ ...investorForm, investmentPhase: e.target.value })} 
+              />
+            </div>
           </div>
 
-          {investorForm.category === 'Money Maker' ? (
+          {/* Marketing Strategy Toggle */}
+          <div className="flex items-center gap-3 p-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5">
+            <input 
+              type="checkbox" 
+              id="marketing-strategy-toggle"
+              className="w-4 h-4 rounded accent-yellow-500"
+              checked={investorForm.marketingStrategy || false}
+              onChange={e => setInvestorForm({ ...investorForm, marketingStrategy: e.target.checked })}
+            />
+            <div>
+              <label htmlFor="marketing-strategy-toggle" className="text-sm font-semibold text-yellow-400 cursor-pointer">Marketing Strategy</label>
+              <p className="text-[10px] text-slate-500">Their number is shown but money is NOT counted in financial totals.</p>
+            </div>
+          </div>
+
+          {(investorForm.investorType || investorForm.category) === 'Money Maker' ? (
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Investment Amount (UGX) *</label>
@@ -922,23 +1154,33 @@ export default function Sacco() {
                   value={investorForm.investmentAmount} 
                   onChange={e => setInvestorForm({ ...investorForm, investmentAmount: e.target.value })} 
                 />
-                <p className="text-xs text-slate-500 mt-1">One unit of investment is <span className="text-slate-300 font-medium">UGX 8,000,000</span>.</p>
+                <p className="text-xs text-slate-500 mt-1">One unit = <span className="text-slate-300 font-medium">UGX 8,000,000</span>. At 8M+ this investor is marked <span className="text-emerald-400">Cleared</span>.</p>
               </div>
 
-              <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-2">
+              <div className={`p-3 rounded-xl border space-y-2 ${
+                Number(investorForm.investmentAmount) >= 8000000 
+                  ? 'bg-emerald-500/10 border-emerald-500/20' 
+                  : 'bg-red-500/10 border-red-500/20'
+              }`}>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Total Investment Units:</span>
-                  <span className="text-white font-bold">{((Number(investorForm.investmentAmount) || 8000000) / 8000000).toFixed(2)} Units</span>
+                  <span className="text-slate-400">Status:</span>
+                  <span className={`font-bold ${Number(investorForm.investmentAmount) >= 8000000 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {Number(investorForm.investmentAmount) >= 8000000 ? '✓ Cleared' : '✗ Not Cleared'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-400">Investment Units:</span>
+                  <span className="text-white font-bold">{((Number(investorForm.investmentAmount) || 0) / 8000000).toFixed(2)} Units</span>
                 </div>
                 <div className="flex justify-between text-xs border-t border-white/5 pt-2">
                   <span className="text-emerald-400 font-medium">Annual Payout (350K/Unit):</span>
-                  <span className="text-emerald-400 font-bold">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 8000000) / 8000000) * 350000))} / yr</span>
+                  <span className="text-emerald-400 font-bold">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 0) / 8000000) * 350000))} / yr</span>
                 </div>
               </div>
 
               <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl flex items-center justify-between">
                 <span className="text-xs font-medium text-emerald-400">5-Year Projection Payout:</span>
-                <span className="text-sm font-bold text-white">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 8000000) / 8000000) * 350000 * 5))}</span>
+                <span className="text-sm font-bold text-white">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 0) / 8000000) * 350000 * 5))}</span>
               </div>
             </div>
           ) : (

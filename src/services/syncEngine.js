@@ -52,6 +52,7 @@ const SYNC_TABLES = {
   saccoInvestors:   'saccoInvestors',
   saccoTransactions: 'saccoTransactions',
   saccoSavings:     'saccoSavings',
+  saccoYearlySavings: 'saccoYearlySavings',
 }
 
 import { onSnapshot } from 'firebase/firestore'

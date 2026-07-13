@@ -11,8 +11,8 @@
   "dependencies": {
     "date-fns": "^3.6.0",
     "dexie": "^3.2.4",
-    "firebase": "^10.12.2",
     "dexie-react-hooks": "^1.1.7",
+    "firebase": "^10.14.1",
     "framer-motion": "^11.2.10",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
