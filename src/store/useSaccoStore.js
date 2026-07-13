@@ -631,6 +631,22 @@ export const useSaccoStore = create((set, get) => ({
           category: mergedCats
         })
         existingMember.category = mergedCats
+
+        // Also update the shares table with the correct count from the Excel
+        if (noOfShares > 0) {
+          const existingShare = await db.saccoShares.where('memberId').equals(memberId).first()
+          if (existingShare) {
+            await db.saccoShares.update(existingShare.id, { shareCount: Math.max(1, noOfShares) })
+          } else {
+            await db.saccoShares.add({ id: crypto.randomUUID(), memberId, shareCount: Math.max(1, noOfShares), createdAt: now })
+          }
+        }
+        
+        // Also update savings table with the correct amount from the Excel
+        const existingSaving = await db.saccoSavings.where('memberId').equals(memberId).first()
+        if (existingSaving) {
+          await db.saccoSavings.update(existingSaving.id, { savingAmount: savings || existingSaving.savingAmount, updatedAt: now })
+        }
       } else {
         // Create new member record
         memberId = crypto.randomUUID()

@@ -10,6 +10,7 @@ import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 import MemberDetailsModal from './MemberDetailsModal'
 import Finance from '../Finance'
+import { forceUploadAllLocalData } from '../../services/syncEngine'
 
 export default function Sacco() {
   const { 
@@ -331,7 +332,15 @@ export default function Sacco() {
     .filter(matchesFilter)
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    .map((m, i) => ({ ...m, index: i + 1 }))
+    .map((m, i) => {
+      // Always pull share count from the live shares table (not the stale noOfShares field)
+      const shareObj = shares.find(s => s.memberId === m.id)
+      const liveShareCount = shareObj?.shareCount ?? m.noOfShares ?? 1
+      const savingObj = savings.find(s => s.memberId === m.id)
+      const liveSavings = savingObj?.savingAmount ?? m.savings ?? 0
+      return { ...m, noOfShares: liveShareCount, savings: liveSavings, index: i + 1 }
+    })
+
 
   const sharesData = members
     .filter(m => hasSavingCategory(m.category))
@@ -726,6 +735,21 @@ export default function Sacco() {
               className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-2"
             >
               <Trash2 size={16} /> Clear Database & Reload
+            </button>
+            <button 
+              onClick={async () => {
+                if (window.confirm('This will push ALL local SACCO data (members, shares, savings, investors) to the cloud. This will sync the missing 179+ members to Cloudflare. Proceed?')) {
+                  try {
+                    await forceUploadAllLocalData()
+                    alert('✅ All local data has been uploaded to the cloud! Hard refresh on other devices.')
+                  } catch (e) {
+                    alert('❌ Upload failed: ' + e.message)
+                  }
+                }
+              }} 
+              className="btn-secondary text-blue-400 border border-blue-500/30 flex items-center gap-2"
+            >
+              <Upload size={16} /> Force Sync to Cloud
             </button>
             <button 
               onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} 
