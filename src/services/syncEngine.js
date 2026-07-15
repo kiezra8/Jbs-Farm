@@ -1,7 +1,7 @@
 import { db } from '../db/schema'
 import { useSyncStore } from '../store/useSyncStore'
 import { initializeApp } from 'firebase/app'
-import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: "AIzaSyBtBDImA3JxW6drta2qG8Kacx4lk7yG85M",
@@ -149,7 +149,7 @@ export async function fetchAllFromFirebase() {
               if (SACCO_TABLES.has(dexieTable)) {
                 scheduleReload(saccoT, 400, getSaccoStore, 'loadSaccoData')
               } else if (MILK_TABLES.has(dexieTable)) {
-                scheduleReload(milkT, 400, getMilkStore, 'loadMilkData')
+                scheduleReload(milkT, 400, getMilkStore, 'loadRecords')
               } else if (ANIMAL_TABLES.has(dexieTable)) {
                 scheduleReload(animalT, 400, getAnimalStore, 'loadAnimals')
               } else if (FINANCE_TABLES.has(dexieTable)) {
@@ -291,10 +291,19 @@ export async function forceUploadAllLocalData() {
       if (records.length === 0) continue
       
       let count = 0
-      for (const record of records) {
-        if (!record.id) continue
-        await setDoc(doc(firestore, firebaseCollection, String(record.id)), record, { merge: true })
-        count++
+      // Process in batches of 500 (Firestore limit)
+      for (let i = 0; i < records.length; i += 500) {
+        const batch = writeBatch(firestore)
+        const chunk = records.slice(i, i + 500)
+        
+        for (const record of chunk) {
+          if (!record.id) continue
+          const docRef = doc(firestore, firebaseCollection, String(record.id))
+          batch.set(docRef, record, { merge: true })
+          count++
+        }
+        
+        await batch.commit()
       }
       console.log(`✅ Uploaded ${count} records to [${firebaseCollection}]`)
     }

@@ -85,6 +85,29 @@ db.version(6).stores({
   saccoYearlySavings: 'id, memberId, year, jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, total, createdAt'
 })
 
+// ─── Version 7: Optimize saccoMembers schema (remove bloated indexes) ───
+db.version(7).stores({
+  animals:          'id, tagNumber, name, breed, gender, status, createdAt, updatedAt',
+  healthRecords:    'id, animalId, type, date, createdAt, updatedAt',
+  breedingRecords:  'id, animalId, type, date, status, createdAt, updatedAt',
+  milkRecords:      'id, animalId, date, session, createdAt',
+  feedInventory:    'id, feedType, updatedAt',
+  feedTransactions: 'id, feedType, type, date, createdAt',
+  finances:         'id, category, type, date, createdAt',
+  staff:            'id, name, role, status, createdAt',
+  attendance:       'id, staffId, date, status, createdAt',
+  tasks:            'id, staffId, status, dueDate, createdAt',
+  notifications:    'id, type, read, createdAt',
+  syncQueue:        '++id, table, operation, recordId, data, status, createdAt',
+  settings:         'key',
+  saccoMembers:     'id, name, phone, nin, category',
+  saccoShares:      'id, memberId, shareCount, createdAt',
+  saccoInvestors:   'id, memberId, category, investorType, investmentPhase, marketingStrategy, moneyMakerAmount, cowsPerYear, createdAt',
+  saccoTransactions: 'id, date, type, source, category, amount, createdAt',
+  saccoSavings:     'id, memberId, savingAmount, updatedAt',
+  saccoYearlySavings: 'id, memberId, year, jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, total, createdAt'
+})
+
 // ─── Auto-generate UUIDs for all new records ─────────────────────────────────
 const SYNC_TABLES = [
   'animals', 'healthRecords', 'breedingRecords', 'milkRecords',
