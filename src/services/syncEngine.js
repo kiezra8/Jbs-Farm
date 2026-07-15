@@ -313,6 +313,41 @@ export async function forceUploadAllLocalData() {
   }
 }
 
+// ─── Force Upload ONLY Sacco Data ──────────────────────────────────────────
+export async function forceUploadSaccoData() {
+  if (!firestore) return
+  console.log('⬆️ Forcing upload of SACCO data to Firebase...')
+  
+  const SACCO_TABLES = ['saccoMembers','saccoShares','saccoInvestors','saccoTransactions','saccoSavings','saccoYearlySavings']
+  
+  try {
+    for (const dexieTable of SACCO_TABLES) {
+      const firebaseCollection = SYNC_TABLES[dexieTable]
+      const records = await db[dexieTable].toArray()
+      if (records.length === 0) continue
+      
+      let count = 0
+      for (let i = 0; i < records.length; i += 500) {
+        const batch = writeBatch(firestore)
+        const chunk = records.slice(i, i + 500)
+        
+        for (const record of chunk) {
+          if (!record.id) continue
+          const docRef = doc(firestore, firebaseCollection, String(record.id))
+          batch.set(docRef, record, { merge: true })
+          count++
+        }
+        
+        await batch.commit()
+      }
+      console.log(`✅ Uploaded ${count} records to [${firebaseCollection}]`)
+    }
+    console.log('🚀 Sacco Migration to Firebase complete!')
+  } catch (e) {
+    console.error('❌ Sacco Migration failed:', e)
+  }
+}
+
 // ─── Init Helper: Create empty placeholder docs to make collections visible ─
 export async function initializeEmptyCollections() {
   if (!firestore) return

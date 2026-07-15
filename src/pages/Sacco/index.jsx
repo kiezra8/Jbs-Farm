@@ -10,7 +10,7 @@ import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 import MemberDetailsModal from './MemberDetailsModal'
 import Finance from '../Finance'
-import { forceUploadAllLocalData } from '../../services/syncEngine'
+import { forceUploadAllLocalData, forceUploadSaccoData } from '../../services/syncEngine'
 
 export default function Sacco() {
   const { 
@@ -708,6 +708,21 @@ export default function Sacco() {
               accept=".xlsx,.xls,.csv" 
               className="hidden" 
             />
+            <button 
+              onClick={async () => {
+                if (window.confirm('This will instantly push your Sacco data to the cloud so it appears on other devices. Proceed?')) {
+                  try {
+                    await forceUploadSaccoData()
+                    alert('✅ Sacco data pushed to cloud! Other devices can now see the updates.')
+                  } catch (e) {
+                    alert('Failed to push data: ' + e.message)
+                  }
+                }
+              }} 
+              className="btn-primary bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+            >
+              <Upload size={16} /> Push to Cloud
+            </button>
             <button 
               onClick={() => excelInputRef.current.click()} 
               className="btn-secondary text-white flex items-center gap-2"
