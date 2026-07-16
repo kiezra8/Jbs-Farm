@@ -347,7 +347,6 @@ export default function Sacco() {
   }
 
   const filteredMembers = members
-    .filter(m => hasSavingCategory(m.category))
     .filter(matchesFilter)
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -390,16 +389,50 @@ export default function Sacco() {
       }
     })
 
-  const investorsData = investors.map(i => {
+  // Build investors data:
+  // 1. Start with all members whose category includes 'Investor' or 'New Farmer'
+  // 2. Merge in any existing saccoInvestors records for full detail
+  const hasInvestorCategory = (catVal) => {
+    let cats = []
+    if (Array.isArray(catVal)) cats = catVal
+    else if (typeof catVal === 'string') {
+      try { cats = catVal.trim().startsWith('[') ? JSON.parse(catVal) : catVal.split(',').map(c => c.trim()) } catch (_) { cats = [catVal] }
+    }
+    return cats.some(c => ['Investor', 'New Farmer', 'Pioneer'].includes(c))
+  }
+
+  const investorMemberIds = new Set(investors.map(i => i.memberId))
+
+  // Members who have investor category but no saccoInvestors record yet
+  const membersAsInvestors = members
+    .filter(m => hasInvestorCategory(m.category) && !investorMemberIds.has(m.id))
+    .map(m => ({
+      id: `member-${m.id}`,
+      memberId: m.id,
+      name: m.name,
+      category: Array.isArray(m.category) ? m.category.join(', ') : m.category,
+      memberCategory: m.category,
+      investorType: 'Member',
+      investmentPhase: m.sheetSource || 'General',
+      marketingStrategy: false,
+      moneyMakerAmount: 0,
+      cowsPerYear: 0,
+    }))
+
+  // Existing saccoInvestors records merged with member name
+  const detailedInvestors = investors.map(i => {
     const member = members.find(m => m.id === i.memberId)
     return {
       ...i,
       name: member?.name || i.name || 'Unknown',
       memberCategory: member?.category || i.category || 'Investor'
     }
-  }).filter(i => {
+  })
+
+  const investorsData = [...detailedInvestors, ...membersAsInvestors].filter(i => {
     const matchesSearch = i.name?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCat = categoryFilter ? (i.category === categoryFilter || i.memberCategory === categoryFilter || (Array.isArray(i.memberCategory) && i.memberCategory.includes(categoryFilter))) : true
+    const catArr = Array.isArray(i.memberCategory) ? i.memberCategory : [i.memberCategory || '']
+    const matchesCat = categoryFilter ? catArr.some(c => c === categoryFilter) || i.category === categoryFilter : true
     return matchesSearch && matchesCat
   })
   

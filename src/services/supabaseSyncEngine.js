@@ -48,13 +48,34 @@ export async function fetchAllSaccoFromSupabase() {
     for (const dexieTable of SACCO_TABLES) {
       const sbTable = TABLE_MAP[dexieTable]
       try {
-        const { data, error } = await supabase.from(sbTable).select('*')
-        if (error) {
-          console.warn(`⚠️ Could not fetch ${sbTable}:`, error.message)
-          continue
+        // Paginate through ALL rows — Supabase defaults to 1000 row limit per request
+        let allData = []
+        let from = 0
+        const PAGE_SIZE = 1000
+
+        while (true) {
+          const { data, error } = await supabase
+            .from(sbTable)
+            .select('*')
+            .range(from, from + PAGE_SIZE - 1)
+
+          if (error) {
+            console.warn(`⚠️ Could not fetch ${sbTable} (page starting ${from}):`, error.message)
+            break
+          }
+
+          if (!data || data.length === 0) break
+
+          allData = allData.concat(data)
+
+          // If we got fewer rows than PAGE_SIZE we've reached the end
+          if (data.length < PAGE_SIZE) break
+
+          from += PAGE_SIZE
         }
-        if (data && data.length > 0) {
-          const cleanData = data.map(record => {
+
+        if (allData.length > 0) {
+          const cleanData = allData.map(record => {
             const cleanRecord = { ...record }
             if (dexieTable === 'saccoMembers' && typeof cleanRecord.category === 'string') {
               try {
