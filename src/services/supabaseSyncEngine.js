@@ -54,8 +54,23 @@ export async function fetchAllSaccoFromSupabase() {
           continue
         }
         if (data && data.length > 0) {
-          await db[dexieTable].bulkPut(data)
-          console.log(`✅ Loaded ${data.length} records into local [${dexieTable}]`)
+          const cleanData = data.map(record => {
+            const cleanRecord = { ...record }
+            if (dexieTable === 'saccoMembers' && typeof cleanRecord.category === 'string') {
+              try {
+                if (cleanRecord.category.trim().startsWith('[')) {
+                  cleanRecord.category = JSON.parse(cleanRecord.category)
+                } else {
+                  cleanRecord.category = cleanRecord.category.split(',').map(c => c.trim()).filter(Boolean)
+                }
+              } catch (_) {
+                cleanRecord.category = [cleanRecord.category]
+              }
+            }
+            return cleanRecord
+          })
+          await db[dexieTable].bulkPut(cleanData)
+          console.log(`✅ Loaded ${cleanData.length} records into local [${dexieTable}]`)
         }
       } catch (e) {
         console.error(`Error loading ${dexieTable}:`, e)
@@ -111,6 +126,7 @@ export async function forceUploadSaccoToSupabase() {
 
         if (error) {
           console.error(`❌ Upsert failed for ${sbTable} chunk ${i}:`, error.message)
+          throw new Error(`Table "${sbTable}" failed: ${error.message}`)
         } else {
           grandTotal += cleanChunk.length
         }
@@ -118,6 +134,7 @@ export async function forceUploadSaccoToSupabase() {
       console.log(`✅ Pushed ${records.length} records to Supabase [${sbTable}]`)
     } catch (e) {
       console.error(`Error pushing ${dexieTable}:`, e)
+      throw e // rethrow to bubble up to UI
     }
   }
 
@@ -182,7 +199,19 @@ export function initSupabaseSaccoSync() {
           skipHooks[dexieTable] = true
           try {
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await db[dexieTable].put(payload.new)
+              const record = { ...payload.new }
+              if (dexieTable === 'saccoMembers' && typeof record.category === 'string') {
+                try {
+                  if (record.category.trim().startsWith('[')) {
+                    record.category = JSON.parse(record.category)
+                  } else {
+                    record.category = record.category.split(',').map(c => c.trim()).filter(Boolean)
+                  }
+                } catch (_) {
+                  record.category = [record.category]
+                }
+              }
+              await db[dexieTable].put(record)
             } else if (payload.eventType === 'DELETE') {
               await db[dexieTable].delete(payload.old.id)
             }

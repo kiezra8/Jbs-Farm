@@ -318,7 +318,21 @@ export default function Sacco() {
 
   // ─── Tables Data Preparation ───────────────────────────────────────────────
   const hasSavingCategory = (catVal) => {
-    const cats = Array.isArray(catVal) ? catVal : [catVal || 'Saving Member']
+    let cats = [];
+    if (Array.isArray(catVal)) {
+      cats = catVal;
+    } else if (typeof catVal === 'string') {
+      try {
+        if (catVal.trim().startsWith('[')) {
+          cats = JSON.parse(catVal);
+        } else {
+          cats = catVal.split(',').map(c => c.trim()).filter(Boolean);
+        }
+      } catch (_) {
+        cats = [catVal];
+      }
+    }
+    if (cats.length === 0) cats = ['Saving Member'];
     return cats.includes('Saving Member') || cats.includes('Pioneer')
   }
 

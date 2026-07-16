@@ -237,8 +237,28 @@ export const useSaccoStore = create((set, get) => ({
     // 4. Map the selected year's savings onto the member objects
     const mappedMembers = members.map(m => {
       const yearly = yearlySavings.find(y => y.memberId === m.id && String(y.year) === selectedYear)
+      
+      let parsedCategory = [];
+      if (Array.isArray(m.category)) {
+        parsedCategory = m.category;
+      } else if (typeof m.category === 'string') {
+        try {
+          if (m.category.trim().startsWith('[')) {
+            parsedCategory = JSON.parse(m.category);
+          } else {
+            parsedCategory = m.category.split(',').map(c => c.trim()).filter(Boolean);
+          }
+        } catch (_) {
+          parsedCategory = [m.category];
+        }
+      }
+      if (parsedCategory.length === 0) {
+        parsedCategory = ['Saving Member'];
+      }
+
       return {
         ...m,
+        category: parsedCategory,
         jan: yearly?.jan || 0,
         feb: yearly?.feb || 0,
         mar: yearly?.mar || 0,
