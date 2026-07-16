@@ -32,36 +32,49 @@ const TABLE_MAP = {
 }
 
 let realtimeChannels = []
+let skipHooks = {}
+let isSyncingAll = false
 
 // ─── Pull ALL Sacco Data from Supabase into local IndexedDB ─────────────────
 export async function fetchAllSaccoFromSupabase() {
-  console.log('⬇️  Fetching Sacco data from Supabase...')
+  if (isSyncingAll) return
+  isSyncingAll = true
+  console.log('⬇  Fetching Sacco data from Supabase...')
 
-  for (const dexieTable of SACCO_TABLES) {
-    const sbTable = TABLE_MAP[dexieTable]
-    try {
-      const { data, error } = await supabase.from(sbTable).select('*')
-      if (error) {
-        console.warn(`⚠️ Could not fetch ${sbTable}:`, error.message)
-        continue
-      }
-      if (data && data.length > 0) {
-        await db[dexieTable].bulkPut(data)
-        console.log(`✅ Loaded ${data.length} records into local [${dexieTable}]`)
-      }
-    } catch (e) {
-      console.error(`Error loading ${dexieTable}:`, e)
-    }
-  }
+  // Prevent local auto-creation or writes from triggering writes back to Supabase
+  SACCO_TABLES.forEach(t => { skipHooks[t] = true })
 
-  // Notify Sacco store to refresh its UI state
   try {
-    const { useSaccoStore } = await import('../store/useSaccoStore')
-    const state = useSaccoStore.getState()
-    if (typeof state.loadSaccoData === 'function') {
-      await state.loadSaccoData()
+    for (const dexieTable of SACCO_TABLES) {
+      const sbTable = TABLE_MAP[dexieTable]
+      try {
+        const { data, error } = await supabase.from(sbTable).select('*')
+        if (error) {
+          console.warn(`⚠️ Could not fetch ${sbTable}:`, error.message)
+          continue
+        }
+        if (data && data.length > 0) {
+          await db[dexieTable].bulkPut(data)
+          console.log(`✅ Loaded ${data.length} records into local [${dexieTable}]`)
+        }
+      } catch (e) {
+        console.error(`Error loading ${dexieTable}:`, e)
+      }
     }
-  } catch (_) {}
+
+    // Notify Sacco store to refresh its UI state only once after all tables are loaded
+    try {
+      const { useSaccoStore } = await import('../store/useSaccoStore')
+      const state = useSaccoStore.getState()
+      if (typeof state.loadSaccoData === 'function') {
+        await state.loadSaccoData()
+      }
+    } catch (_) {}
+
+  } finally {
+    SACCO_TABLES.forEach(t => { skipHooks[t] = false })
+    isSyncingAll = false
+  }
 
   console.log('✅ Sacco data loaded from Supabase.')
 }
@@ -81,14 +94,25 @@ export async function forceUploadSaccoToSupabase() {
       // Process in chunks of 500 to avoid request size limits
       for (let i = 0; i < records.length; i += 500) {
         const chunk = records.slice(i, i + 500)
+        
+        // Clean columns to avoid foreign key issues or extra property issues
+        const cleanChunk = chunk.map(record => {
+          const cleanRecord = { ...record }
+          // If category is string in IndexedDB (from legacy data), convert it to array for JSONB column compatibility
+          if (dexieTable === 'saccoMembers' && typeof cleanRecord.category === 'string') {
+            cleanRecord.category = [cleanRecord.category]
+          }
+          return cleanRecord
+        })
+
         const { error } = await supabase
           .from(sbTable)
-          .upsert(chunk, { onConflict: 'id' })
+          .upsert(cleanChunk, { onConflict: 'id' })
 
         if (error) {
           console.error(`❌ Upsert failed for ${sbTable} chunk ${i}:`, error.message)
         } else {
-          grandTotal += chunk.length
+          grandTotal += cleanChunk.length
         }
       }
       console.log(`✅ Pushed ${records.length} records to Supabase [${sbTable}]`)
@@ -103,14 +127,19 @@ export async function forceUploadSaccoToSupabase() {
 
 // ─── Upsert a single Sacco record to Supabase ───────────────────────────────
 export async function upsertSaccoRecord(dexieTable, record) {
-  if (!record || !record.id) return
+  if (!record || !record.id || skipHooks[dexieTable] || isSyncingAll) return
   const sbTable = TABLE_MAP[dexieTable]
   if (!sbTable) return
 
   try {
+    const cleanRecord = { ...record }
+    if (dexieTable === 'saccoMembers' && typeof cleanRecord.category === 'string') {
+      cleanRecord.category = [cleanRecord.category]
+    }
+
     const { error } = await supabase
       .from(sbTable)
-      .upsert(record, { onConflict: 'id' })
+      .upsert(cleanRecord, { onConflict: 'id' })
     if (error) {
       console.warn(`⚠️ Supabase upsert failed for ${sbTable}:`, error.message)
     }
@@ -121,6 +150,7 @@ export async function upsertSaccoRecord(dexieTable, record) {
 
 // ─── Delete a single Sacco record from Supabase ─────────────────────────────
 export async function deleteSaccoRecord(dexieTable, id) {
+  if (skipHooks[dexieTable] || isSyncingAll) return
   const sbTable = TABLE_MAP[dexieTable]
   if (!sbTable) return
 
@@ -149,6 +179,7 @@ export function initSupabaseSaccoSync() {
         'postgres_changes',
         { event: '*', schema: 'public', table: sbTable },
         async (payload) => {
+          skipHooks[dexieTable] = true
           try {
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               await db[dexieTable].put(payload.new)
@@ -160,10 +191,12 @@ export function initSupabaseSaccoSync() {
             const { useSaccoStore } = await import('../store/useSaccoStore')
             const state = useSaccoStore.getState()
             if (typeof state.loadSaccoData === 'function') {
-              state.loadSaccoData()
+              await state.loadSaccoData()
             }
           } catch (e) {
             console.warn(`Realtime error on ${sbTable}:`, e)
+          } finally {
+            skipHooks[dexieTable] = false
           }
         }
       )
@@ -184,6 +217,7 @@ export function setupSaccoDexieHooks() {
   for (const dexieTable of SACCO_TABLES) {
     // CREATE
     db[dexieTable].hook('creating', function (primKey, obj) {
+      if (skipHooks[dexieTable] || isSyncingAll) return
       this.onsuccess = function (generatedKey) {
         upsertSaccoRecord(dexieTable, { ...obj, id: generatedKey })
       }
@@ -191,6 +225,7 @@ export function setupSaccoDexieHooks() {
 
     // UPDATE
     db[dexieTable].hook('updating', function (mods, primKey, obj) {
+      if (skipHooks[dexieTable] || isSyncingAll) return
       const fullRecord = { ...obj, ...mods }
       this.onsuccess = function () {
         upsertSaccoRecord(dexieTable, fullRecord)
@@ -199,6 +234,7 @@ export function setupSaccoDexieHooks() {
 
     // DELETE
     db[dexieTable].hook('deleting', function (primKey) {
+      if (skipHooks[dexieTable] || isSyncingAll) return
       this.onsuccess = function () {
         deleteSaccoRecord(dexieTable, primKey)
       }
