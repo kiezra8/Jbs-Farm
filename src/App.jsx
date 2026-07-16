@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { useAuthStore } from './store/useAuthStore'
 import { useUIStore } from './store/useUIStore'
 import { initSyncEngine, initFirebase, fetchAllFromFirebase } from './services/syncEngine'
+import { initSaccoSync } from './services/supabaseSyncEngine'
 
 import AppLayout from './components/layout/AppLayout'
 
@@ -43,6 +44,9 @@ function App() {
       // Pull latest cloud data so all users see the same records
       fetchAllFromFirebase()
     }
+
+    // Start Supabase sync for all Sacco tables
+    initSaccoSync()
 
     // Start the offline sync engine (queues writes, flushes on reconnect)
     const cleanupSync = initSyncEngine()

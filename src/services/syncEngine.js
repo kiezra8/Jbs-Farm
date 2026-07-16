@@ -34,7 +34,8 @@ export function initFirebase() {
 
 export function getFirestoreDb() { return firestore }
 
-// All tables that get synced — Dexie name : Firebase collection name
+// All tables that get synced via Firebase — Dexie name : Firebase collection name
+// NOTE: Sacco tables are intentionally excluded — they sync via Supabase instead
 const SYNC_TABLES = {
   animals:          'animals',
   healthRecords:    'healthRecords',
@@ -47,12 +48,8 @@ const SYNC_TABLES = {
   attendance:       'attendance',
   tasks:            'tasks',
   notifications:    'notifications',
-  saccoMembers:     'saccoMembers',
-  saccoShares:      'saccoShares',
-  saccoInvestors:   'saccoInvestors',
-  saccoTransactions: 'saccoTransactions',
-  saccoSavings:     'saccoSavings',
-  saccoYearlySavings: 'saccoYearlySavings',
+  // saccoMembers, saccoShares, saccoInvestors, saccoTransactions,
+  // saccoSavings, saccoYearlySavings  ← handled by supabaseSyncEngine.js
 }
 
 import { onSnapshot } from 'firebase/firestore'
@@ -71,14 +68,13 @@ export async function fetchAllFromFirebase() {
   unsubscribes = []
 
   // Lazy-load stores to avoid circular imports
-  const getSaccoStore  = () => import('../store/useSaccoStore').then(m => m.useSaccoStore.getState())
   const getMilkStore   = () => import('../store/useMilkStore').then(m => m.useMilkStore.getState())
   const getAnimalStore = () => import('../store/useAnimalStore').then(m => m.useAnimalStore?.getState?.())
   const getFinanceStore= () => import('../store/useFinanceStore').then(m => m.useFinanceStore?.getState?.())
   const getStaffStore  = () => import('../store/useStaffStore').then(m => m.useStaffStore?.getState?.())
 
   // Map each Dexie table to the store reload function that should run when it changes
-  const SACCO_TABLES = new Set(['saccoMembers','saccoShares','saccoInvestors','saccoTransactions','saccoSavings','saccoYearlySavings'])
+  // Note: Sacco tables removed — they are now handled by supabaseSyncEngine
   const MILK_TABLES  = new Set(['milkRecords'])
   const ANIMAL_TABLES= new Set(['animals','healthRecords','breedingRecords'])
   const FINANCE_TABLES=new Set(['finances'])
@@ -105,7 +101,6 @@ export async function fetchAllFromFirebase() {
   }
 
   // Use object wrappers so timers can be mutated inside the closure
-  const saccoT  = { current: null }
   const milkT   = { current: null }
   const animalT = { current: null }
   const financeT= { current: null }
@@ -146,9 +141,7 @@ export async function fetchAllFromFirebase() {
             // ── Notify the correct UI store to reload so screen updates instantly ──
             const hasChanges = toUpsert.length > 0 || toDelete.length > 0
             if (hasChanges) {
-              if (SACCO_TABLES.has(dexieTable)) {
-                scheduleReload(saccoT, 400, getSaccoStore, 'loadSaccoData')
-              } else if (MILK_TABLES.has(dexieTable)) {
+              if (MILK_TABLES.has(dexieTable)) {
                 scheduleReload(milkT, 400, getMilkStore, 'loadRecords')
               } else if (ANIMAL_TABLES.has(dexieTable)) {
                 scheduleReload(animalT, 400, getAnimalStore, 'loadAnimals')
@@ -313,39 +306,12 @@ export async function forceUploadAllLocalData() {
   }
 }
 
-// ─── Force Upload ONLY Sacco Data ──────────────────────────────────────────
+// ─── Force Upload ONLY Sacco Data (now redirects to Supabase) ──────────────
 export async function forceUploadSaccoData() {
-  if (!firestore) return
-  console.log('⬆️ Forcing upload of SACCO data to Firebase...')
-  
-  const SACCO_TABLES = ['saccoMembers','saccoShares','saccoInvestors','saccoTransactions','saccoSavings','saccoYearlySavings']
-  
-  try {
-    for (const dexieTable of SACCO_TABLES) {
-      const firebaseCollection = SYNC_TABLES[dexieTable]
-      const records = await db[dexieTable].toArray()
-      if (records.length === 0) continue
-      
-      let count = 0
-      for (let i = 0; i < records.length; i += 500) {
-        const batch = writeBatch(firestore)
-        const chunk = records.slice(i, i + 500)
-        
-        for (const record of chunk) {
-          if (!record.id) continue
-          const docRef = doc(firestore, firebaseCollection, String(record.id))
-          batch.set(docRef, record, { merge: true })
-          count++
-        }
-        
-        await batch.commit()
-      }
-      console.log(`✅ Uploaded ${count} records to [${firebaseCollection}]`)
-    }
-    console.log('🚀 Sacco Migration to Firebase complete!')
-  } catch (e) {
-    console.error('❌ Sacco Migration failed:', e)
-  }
+  // Sacco data now lives in Supabase, not Firebase
+  // Import and call the Supabase version
+  const { forceUploadSaccoToSupabase } = await import('./supabaseSyncEngine')
+  return forceUploadSaccoToSupabase()
 }
 
 // ─── Init Helper: Create empty placeholder docs to make collections visible ─
