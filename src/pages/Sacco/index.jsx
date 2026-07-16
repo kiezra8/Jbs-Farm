@@ -712,10 +712,15 @@ export default function Sacco() {
               onClick={async () => {
                 if (window.confirm('This will instantly push your Sacco data to the cloud so it appears on other devices. Proceed?')) {
                   try {
-                    await forceUploadSaccoData()
-                    alert('✅ Sacco data pushed to cloud! Other devices can now see the updates.')
+                    const { forceUploadSaccoToSupabase } = await import('../../services/supabaseSyncEngine')
+                    const count = await forceUploadSaccoToSupabase()
+                    if (count > 0) {
+                      alert(`✅ Successfully pushed ${count} Sacco records to Supabase!\nOther devices will now see the data.`)
+                    } else {
+                      alert('⚠️ Push completed but 0 records were sent.\n\nPossible causes:\n1. No local Sacco data found\n2. Supabase is blocking writes (check RLS policies)\n\nOpen browser console (F12) for error details.')
+                    }
                   } catch (e) {
-                    alert('Failed to push data: ' + e.message)
+                    alert('❌ Failed to push data: ' + e.message + '\n\nOpen browser console (F12) for full details.')
                   }
                 }
               }} 
