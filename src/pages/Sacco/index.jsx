@@ -283,6 +283,7 @@ export default function Sacco() {
       await updateShares(editingSharesMember.id, newCount)
       if (newCount > oldCount) {
         await addTransaction({
+          memberId: editingSharesMember.id,
           date: format(new Date(), 'yyyy-MM-dd'),
           type: 'Income',
           source: isBanked ? 'Bank' : paymentMethod,
@@ -309,6 +310,7 @@ export default function Sacco() {
       
       // Log transaction
       await addTransaction({
+        memberId: editingSavingsMember.id,
         date: format(new Date(), 'yyyy-MM-dd'),
         type: savingsMode === 'deposit' ? 'Income' : 'Expense',
         source: isBanked ? 'Bank' : paymentMethod,
@@ -355,6 +357,7 @@ export default function Sacco() {
       // Log the transaction if money was added
       if (addedAmount > 0) {
         await addTransaction({
+          memberId: editingInvestor.id,
           date: format(new Date(), 'yyyy-MM-dd'),
           type: 'Income',
           source: investorForm.isBanked ? 'Bank' : investorForm.paymentMethod,
@@ -1620,21 +1623,14 @@ export default function Sacco() {
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Category *</label>
-              <select 
+              <input 
                 required 
+                type="text"
                 className="input-field" 
                 value={txForm.category} 
                 onChange={e => setTxForm({ ...txForm, category: e.target.value })}
-              >
-                <option value="Share Purchase">Share Purchase</option>
-                <option value="Savings">Savings Deposit</option>
-                <option value="Membership Fee">Membership Fee</option>
-                <option value="Pioneer Contribution">Pioneer Contribution</option>
-                <option value="Investment Deposit">Investment Deposit</option>
-                <option value="General Expense">General Expense</option>
-                <option value="Investment Payout">Investment Payout</option>
-                <option value="Other">Other</option>
-              </select>
+                placeholder="e.g. Savings, Supplies, General Expense"
+              />
             </div>
 
             <div className="col-span-2">

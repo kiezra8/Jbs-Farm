@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import Modal from '../../components/ui/Modal'
-import { Users, Coins, PiggyBank, TrendingUp, Save } from 'lucide-react'
+import { Users, Coins, PiggyBank, TrendingUp, Save, List, Plus } from 'lucide-react'
 import { formatUGX } from '../../utils/formatters'
 import { useSaccoStore } from '../../store/useSaccoStore'
+import { format } from 'date-fns'
 
 export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
   const { 
     members, shares, savings, investors, 
-    updateMember, updateShares, updateSavings, convertSavingsToShares, updateInvestor 
+    updateMember, updateShares, updateSavings, convertSavingsToShares, updateInvestor, getMemberTransactions, addTransaction
   } = useSaccoStore()
 
   const [activeTab, setActiveTab] = useState('biodata')
@@ -23,12 +24,22 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
   const [savingsAmt, setSavingsAmt] = useState('0')
   const [savingsMode, setSavingsMode] = useState('deposit')
   const [convertAmt, setConvertAmt] = useState('1')
-  const [investorData, setInvestorData] = useState({ category: 'Money Maker', investmentAmount: '8000000', cowsPerYear: '0' })
+  
+  // Investor states
+  const [investorData, setInvestorData] = useState({ category: 'Money Maker', investorType: 'Money Maker', investmentPhase: 'Initial', marketingStrategy: false })
+  const [investorUnits, setInvestorUnits] = useState('1') // 1 unit = 8M
+  const [investorPaid, setInvestorPaid] = useState(0)
+  
+  // Add payment states (used for both Savings and Investor in their respective tabs)
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [isBanked, setIsBanked] = useState(false)
+  const [investorAddPayment, setInvestorAddPayment] = useState('')
 
   const member = members.find(m => m.id === memberId)
   const memberShares = shares.find(s => s.memberId === memberId)
   const memberSavings = savings.find(s => s.memberId === memberId)
   const memberInvestor = investors.find(i => i.memberId === memberId)
+  const memberTransactions = memberId ? getMemberTransactions(memberId) : []
 
   // Auto-compute total whenever monthly fields change
   const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
@@ -56,20 +67,30 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
       setShareCount(String(memberShares?.shareCount || 1))
       setSavingsAmt('')
       setConvertAmt('1')
+      setPaymentMethod('Cash')
+      setIsBanked(false)
+      setInvestorAddPayment('')
+
       if (memberInvestor) {
         setInvestorData({
           category: memberInvestor.investorType || memberInvestor.category || 'Money Maker',
           investorType: memberInvestor.investorType || memberInvestor.category || 'Money Maker',
           investmentPhase: memberInvestor.investmentPhase || 'Initial',
           marketingStrategy: memberInvestor.marketingStrategy || false,
-          investmentAmount: String(memberInvestor.investmentAmount || '8000000'),
-          cowsPerYear: String(memberInvestor.cowsPerYear || '0')
         })
+        const target = memberInvestor.programAmount || memberInvestor.investmentAmount || 8000000
+        setInvestorUnits(String(Math.ceil(target / 8000000) || 1))
+        setInvestorPaid(Number(memberInvestor.investmentAmount) || 0)
+      } else {
+        setInvestorUnits('1')
+        setInvestorPaid(0)
       }
     }
-  }, [member, memberShares, memberSavings, memberInvestor])
+  }, [member, memberShares, memberSavings, memberInvestor, isOpen])
 
   if (!member) return null
+
+  const isInvestor = (Array.isArray(biodata.category) ? biodata.category : [biodata.category]).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || memberInvestor !== undefined;
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0]
@@ -88,7 +109,23 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
 
   const handleSaveShares = async (e) => {
     e.preventDefault()
-    await updateShares(member.id, shareCount)
+    const newCount = Number(shareCount) || 1
+    const oldCount = memberShares?.shareCount || 1
+    await updateShares(member.id, newCount)
+    
+    if (newCount > oldCount) {
+      await addTransaction({
+        memberId: member.id,
+        date: format(new Date(), 'yyyy-MM-dd'),
+        type: 'Income',
+        source: 'Cash',
+        category: 'Share Purchase',
+        amount: (newCount - oldCount) * 100000,
+        paymentMethod: 'Cash',
+        isBanked: false,
+        description: `Share purchase for ${member.name} (${oldCount} → ${newCount} shares)`
+      })
+    }
     alert('Shares updated successfully!')
   }
 
@@ -96,8 +133,23 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
     e.preventDefault()
     const current = memberSavings?.savingAmount || 0
     const delta = Number(savingsAmt) || 0
+    if (delta <= 0) return alert('Enter a valid amount')
+
     const finalAmount = savingsMode === 'deposit' ? current + delta : Math.max(0, current - delta)
     await updateSavings(member.id, finalAmount)
+    
+    await addTransaction({
+      memberId: member.id,
+      date: format(new Date(), 'yyyy-MM-dd'),
+      type: savingsMode === 'deposit' ? 'Income' : 'Expense',
+      source: isBanked ? 'Bank' : paymentMethod,
+      category: 'Savings',
+      amount: delta,
+      paymentMethod,
+      isBanked,
+      description: `${savingsMode === 'deposit' ? 'Deposited' : 'Withdrew'} savings for ${member.name}`
+    })
+
     alert(`Savings ${savingsMode === 'deposit' ? 'deposited' : 'withdrawn'} successfully!`)
     setSavingsAmt('')
   }
@@ -113,19 +165,65 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
     }
   }
 
-  const handleSaveInvestor = async (e) => {
+  const handleSaveInvestorConfig = async (e) => {
     e.preventDefault()
+    const targetAmount = (Number(investorUnits) || 1) * 8000000
+    
     if (memberInvestor) {
       await updateInvestor(memberInvestor.id, {
-        category: investorData.investorType || investorData.category,
-        investorType: investorData.investorType || investorData.category,
-        investmentPhase: investorData.investmentPhase || 'Initial',
-        marketingStrategy: investorData.marketingStrategy || false,
-        investmentAmount: Number(investorData.investmentAmount) || 8000000,
-        cowsPerYear: Number(investorData.cowsPerYear) || 0
+        ...investorData,
+        programAmount: targetAmount,
+        investmentAmount: investorPaid // ensure we don't wipe out the paid amount
       })
-      alert('Investor details updated successfully!')
+    } else {
+      // Create new investor record
+      await updateInvestor(crypto.randomUUID(), {
+        memberId: member.id,
+        ...investorData,
+        programAmount: targetAmount,
+        investmentAmount: investorPaid
+      })
     }
+    alert('Investor config saved!')
+  }
+
+  const handleAddInvestorPayment = async (e) => {
+    e.preventDefault()
+    const amountToAdd = Number(investorAddPayment) || 0
+    if (amountToAdd <= 0) return alert('Enter a valid payment amount')
+
+    const newPaidAmount = investorPaid + amountToAdd
+    const targetAmount = (Number(investorUnits) || 1) * 8000000
+
+    if (memberInvestor) {
+      await updateInvestor(memberInvestor.id, {
+        investmentAmount: newPaidAmount,
+        programAmount: targetAmount
+      })
+    } else {
+      await updateInvestor(crypto.randomUUID(), {
+        memberId: member.id,
+        ...investorData,
+        programAmount: targetAmount,
+        investmentAmount: newPaidAmount
+      })
+    }
+
+    await addTransaction({
+      memberId: member.id,
+      date: format(new Date(), 'yyyy-MM-dd'),
+      type: 'Income',
+      source: isBanked ? 'Bank' : paymentMethod,
+      category: 'Investment Deposit',
+      amount: amountToAdd,
+      paymentMethod,
+      isBanked,
+      description: `Investment payment for ${member.name}`
+    })
+
+    setInvestorPaid(newPaidAmount)
+    setInvestorAddPayment('')
+    alert('Investment payment recorded successfully!')
   }
 
   return (
@@ -134,9 +232,10 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
         <button type="button" onClick={() => setActiveTab('biodata')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex items-center gap-2 ${activeTab === 'biodata' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}><Users size={16}/> Biodata</button>
         <button type="button" onClick={() => setActiveTab('shares')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex items-center gap-2 ${activeTab === 'shares' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}><Coins size={16}/> Shares</button>
         <button type="button" onClick={() => setActiveTab('savings')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex items-center gap-2 ${activeTab === 'savings' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}><PiggyBank size={16}/> Savings</button>
-        {(Array.isArray(biodata.category) ? biodata.category : [biodata.category]).includes('Investor') && (
+        {isInvestor && (
           <button type="button" onClick={() => setActiveTab('investor')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex items-center gap-2 ${activeTab === 'investor' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}><TrendingUp size={16}/> Investor</button>
         )}
+        <button type="button" onClick={() => setActiveTab('history')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex items-center gap-2 ${activeTab === 'history' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}><List size={16}/> History</button>
       </div>
 
       <div className="max-h-[60vh] overflow-y-auto pr-2">
@@ -170,7 +269,7 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                           selected 
                             ? cat === 'Investor' ? 'bg-purple-500/20 text-purple-400 border-purple-500/40' 
                               : cat === 'Pioneer' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                              : 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                              : 'bg-white/10 text-white border-white/20'
                             : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'
                         }`}>{cat}</button>
                       )
@@ -257,9 +356,23 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                 <button type="button" onClick={() => setSavingsMode('deposit')} className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${savingsMode === 'deposit' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'}`}>Deposit</button>
                 <button type="button" onClick={() => setSavingsMode('withdraw')} className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${savingsMode === 'withdraw' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'}`}>Withdraw</button>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Amount (UGX)</label>
-                <input required type="number" min="1" className="input-field" value={savingsAmt} onChange={e => setSavingsAmt(e.target.value)} />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Amount (UGX)</label>
+                  <input required type="number" min="1" className="input-field" value={savingsAmt} onChange={e => setSavingsAmt(e.target.value)} />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Payment Method</label>
+                  <select className="input-field text-xs" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                    <option value="Cash">Cash</option><option value="Bank">Bank</option><option value="MTN MM">MTN MM</option><option value="Airtel MM">Airtel MM</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 mt-6">
+                  <input type="checkbox" id="banked-toggle" className="w-4 h-4" checked={isBanked} onChange={e => setIsBanked(e.target.checked)} />
+                  <label htmlFor="banked-toggle" className="text-xs text-slate-400">Already in Bank?</label>
+                </div>
               </div>
               <div className="flex justify-end"><button type="submit" className="btn-secondary flex gap-2 items-center"><Save size={16}/> Apply Amount</button></div>
             </form>
@@ -276,50 +389,111 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
           </div>
         )}
 
-        {activeTab === 'investor' && (Array.isArray(biodata.category) ? biodata.category : [biodata.category]).includes('Investor') && (
-          <form onSubmit={handleSaveInvestor} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Investor Type</label>
-                <select className="input-field" value={investorData.investorType || investorData.category} onChange={e => setInvestorData({...investorData, investorType: e.target.value, category: e.target.value})}>
-                  <option value="Money Maker">Money Maker</option><option value="New Farmer">New Farmer</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
-                <input type="text" className="input-field" placeholder="e.g. Phase 1" value={investorData.investmentPhase || ''} onChange={e => setInvestorData({...investorData, investmentPhase: e.target.value})} />
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5">
-              <input type="checkbox" id="mkt-toggle-detail" className="w-4 h-4 rounded accent-yellow-500" checked={investorData.marketingStrategy || false} onChange={e => setInvestorData({...investorData, marketingStrategy: e.target.checked})} />
-              <label htmlFor="mkt-toggle-detail" className="text-sm font-semibold text-yellow-400 cursor-pointer">Marketing Strategy <span className="text-[10px] text-slate-500 font-normal">(number shown but money NOT counted)</span></label>
-            </div>
-            {(investorData.investorType || investorData.category) === 'Money Maker' && (
-              <div className="space-y-3">
+        {activeTab === 'investor' && isInvestor && (
+          <div className="space-y-6">
+            <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Investment Amount (UGX)</label>
-                  <input required type="number" step="100000" className="input-field" value={investorData.investmentAmount} onChange={e => setInvestorData({...investorData, investmentAmount: e.target.value})} />
+                  <p className="text-xs text-purple-400 mb-1">Target Amount</p>
+                  <p className="text-xl font-bold text-white">{formatUGX((Number(investorUnits) || 1) * 8000000)}</p>
+                  <p className="text-[10px] text-slate-400">{investorUnits} Unit(s) of 8M</p>
                 </div>
-                <div className={`p-3 rounded-xl border ${ Number(investorData.investmentAmount) >= 8000000 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Status:</span>
-                    <span className={`font-bold ${Number(investorData.investmentAmount) >= 8000000 ? 'text-emerald-400' : 'text-red-400'}`}>{Number(investorData.investmentAmount) >= 8000000 ? '✓ Cleared' : '✗ Not Cleared'}</span>
-                  </div>
-                  <div className="flex justify-between text-xs mt-1">
-                    <span className="text-emerald-400">Annual Payout:</span>
-                    <span className="text-emerald-400 font-bold">{formatUGX(((Number(investorData.investmentAmount) || 0) / 8000000) * 350000)} / yr</span>
-                  </div>
+                <div>
+                  <p className="text-xs text-emerald-400 mb-1">Total Paid</p>
+                  <p className="text-xl font-bold text-white">{formatUGX(investorPaid)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-red-400 mb-1">Remaining Balance</p>
+                  <p className="text-xl font-bold text-white">{formatUGX(Math.max(0, ((Number(investorUnits) || 1) * 8000000) - investorPaid))}</p>
                 </div>
               </div>
-            )}
-            {(investorData.investorType || investorData.category) === 'New Farmer' && (
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Cows per Year</label>
-                <input required type="number" className="input-field" value={investorData.cowsPerYear} onChange={e => setInvestorData({...investorData, cowsPerYear: e.target.value})} />
+            </div>
+
+            <form onSubmit={handleAddInvestorPayment} className="space-y-4 p-4 border border-white/10 rounded-xl">
+              <h4 className="font-semibold text-emerald-400 mb-2 flex items-center gap-2"><Plus size={16}/> Add Payment</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Amount to Add (UGX)</label>
+                  <input required type="number" min="1" className="input-field" value={investorAddPayment} onChange={e => setInvestorAddPayment(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Payment Method</label>
+                  <select className="input-field text-xs" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                    <option value="Cash">Cash</option><option value="Bank">Bank</option><option value="MTN MM">MTN MM</option><option value="Airtel MM">Airtel MM</option><option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 mt-6">
+                  <input type="checkbox" id="inv-banked-toggle" className="w-4 h-4" checked={isBanked} onChange={e => setIsBanked(e.target.checked)} />
+                  <label htmlFor="inv-banked-toggle" className="text-xs text-slate-400">Already in Bank?</label>
+                </div>
+              </div>
+              <div className="flex justify-end"><button type="submit" className="btn-primary flex gap-2 items-center"><Save size={16}/> Record Payment</button></div>
+            </form>
+
+            <form onSubmit={handleSaveInvestorConfig} className="space-y-4 pt-4 border-t border-white/10">
+              <h4 className="font-semibold text-slate-300">Investor Configuration</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Investor Type</label>
+                  <select className="input-field" value={investorData.investorType || investorData.category} onChange={e => setInvestorData({...investorData, investorType: e.target.value, category: e.target.value})}>
+                    <option value="Money Maker">Money Maker</option><option value="New Farmer">New Farmer</option><option value="Phase 3">Phase 3</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
+                  <input type="text" className="input-field" placeholder="e.g. Phase 1" value={investorData.investmentPhase || ''} onChange={e => setInvestorData({...investorData, investmentPhase: e.target.value})} />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Units (1 Unit = 8M)</label>
+                  <select className="input-field" value={investorUnits} onChange={e => setInvestorUnits(e.target.value)}>
+                    <option value="1">1 Unit (8M)</option>
+                    <option value="2">2 Units (16M)</option>
+                    <option value="3">3 Units (24M)</option>
+                    <option value="4">4 Units (32M)</option>
+                    <option value="5">5 Units (40M)</option>
+                    <option value="10">10 Units (80M)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5">
+                <input type="checkbox" id="mkt-toggle-detail" className="w-4 h-4 rounded accent-yellow-500" checked={investorData.marketingStrategy || false} onChange={e => setInvestorData({...investorData, marketingStrategy: e.target.checked})} />
+                <label htmlFor="mkt-toggle-detail" className="text-sm font-semibold text-yellow-400 cursor-pointer">Marketing Strategy <span className="text-[10px] text-slate-500 font-normal">(number shown but money NOT counted)</span></label>
+              </div>
+              <div className="flex justify-end pt-4"><button type="submit" className="btn-secondary flex gap-2 items-center border-slate-500"><Save size={16}/> Save Configuration</button></div>
+            </form>
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <h4 className="font-semibold text-slate-300 border-b border-white/10 pb-2">Transaction History</h4>
+            {memberTransactions.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                <List size={48} className="mx-auto mb-3 opacity-20" />
+                <p>No transactions recorded yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {memberTransactions.map(tx => (
+                  <div key={tx.id} className="p-3 rounded-xl border border-white/10 flex justify-between items-center bg-white/5 hover:bg-white/10 transition-colors">
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">{format(new Date(tx.date), 'dd MMM yyyy')}</p>
+                      <p className="font-semibold text-white">{tx.category}</p>
+                      <p className="text-[10px] text-slate-400">{tx.description}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-bold ${tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {tx.type === 'Income' ? '+' : '-'}{formatUGX(tx.amount)}
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        {tx.paymentMethod} {tx.isBanked ? <span className="text-emerald-400">(Banked)</span> : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="flex justify-end pt-4"><button type="submit" className="btn-primary flex gap-2 items-center"><Save size={16}/> Save Investor Profile</button></div>
-          </form>
+          </div>
         )}
       </div>
     </Modal>

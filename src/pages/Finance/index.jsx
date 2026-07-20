@@ -179,10 +179,7 @@ export default function Finance() {
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Category *</label>
-              <select required className="input-field" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-                <option value="">Select Category...</option>
-                {categories.map(c => <option key={c}>{c}</option>)}
-              </select>
+              <input required type="text" className="input-field" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} placeholder="e.g. Feeds, Drugs, Salaries" />
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Amount (Ushs) *</label><input required type="number" className="input-field" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} /></div>
             <div className="col-span-2"><label className="block text-xs font-medium text-slate-400 mb-1">Description *</label><input required type="text" className="input-field" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="e.g. Bought 10 bags of Dairy Meal" /></div>

@@ -473,6 +473,7 @@ export const useSaccoStore = create((set, get) => ({
     
     // Add transaction to ledger
     await get().addTransaction({
+      memberId: memberObj.id,
       date: format(new Date(), 'yyyy-MM-dd'),
       type: 'Transfer',
       source: 'Bank',
@@ -506,6 +507,12 @@ export const useSaccoStore = create((set, get) => ({
   deleteTransaction: async (id) => {
     await db.saccoTransactions.delete(id)
     await get().loadSaccoData()
+  },
+
+  getMemberTransactions: (memberId) => {
+    return get().transactions
+      .filter(t => t.memberId === memberId)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
   },
 
   importFromExcel: async (rows, financialYear = '2026', sheetName = '') => {
