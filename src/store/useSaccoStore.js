@@ -144,7 +144,7 @@ export const useSaccoStore = create((set, get) => ({
     let hasDuplicates = false
     for (const m of members) {
       if (!m.name || m.sheetSource === 'PHASE 3') continue
-      const cleanM = cleanName(m.name).toLowerCase()
+      const cleanM = getSortedWords(m.name)
       if (uniqueNames[cleanM]) {
         hasDuplicates = true
         break
@@ -157,7 +157,7 @@ export const useSaccoStore = create((set, get) => ({
       const processedCleanNames = {}
       for (const m of members) {
         if (!m.name || m.sheetSource === 'PHASE 3') continue
-        const cleanM = cleanName(m.name).toLowerCase()
+        const cleanM = getSortedWords(m.name)
         if (processedCleanNames[cleanM]) {
           const primary = processedCleanNames[cleanM]
           const primaryCats = Array.isArray(primary.category) ? primary.category : [primary.category || 'Saving Member']
@@ -486,13 +486,7 @@ export const useSaccoStore = create((set, get) => ({
   },
 
   updateInvestor: async (id, data) => {
-    // If investmentAmount is changed, auto-compute moneyMakerAmount = (investmentAmount / 8M) * 350K
-    const updatedData = { ...data }
-    if (data.investmentAmount !== undefined && data.category === 'Money Maker') {
-      const amt = Number(data.investmentAmount) || 0
-      updatedData.moneyMakerAmount = Math.round((amt / 8000000) * 350000)
-    }
-    await db.saccoInvestors.update(id, updatedData)
+    await db.saccoInvestors.update(id, data)
     await get().loadSaccoData()
   },
 

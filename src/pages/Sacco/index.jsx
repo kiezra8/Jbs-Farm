@@ -100,6 +100,7 @@ export default function Sacco() {
 
   const excelInputRef = useRef(null)
   const investorExcelInputRef = useRef(null)
+  const expenseExcelInputRef = useRef(null)
 
   const [isUnlocked, setIsUnlocked] = useState(() => sessionStorage.getItem('saccoUnlocked') === 'true')
   const [pinInput, setPinInput] = useState('')
@@ -205,6 +206,48 @@ export default function Sacco() {
         alert('Failed to parse excel file. Please check the file format.')
       }
       e.target.value = null // reset
+    reader.readAsBinaryString(file)
+  }
+
+  // ─── Expense Excel Import handler ──────────────────────────────────────────
+  const handleExpenseExcelImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws)
+
+        let importedCount = 0
+        for (const row of data) {
+          // Expected columns: Date, Category, Amount, Description, Payment Method
+          const amount = Number(row.Amount) || 0
+          if (amount > 0) {
+            await addTransaction({
+              date: row.Date || format(new Date(), 'yyyy-MM-dd'),
+              type: 'Expense',
+              source: row['Payment Method'] === 'Bank' ? 'Bank' : 'Petty Cash',
+              category: row.Category || 'General Expense',
+              amount,
+              paymentMethod: row['Payment Method'] || 'Cash',
+              isBanked: row['Payment Method'] === 'Bank',
+              description: row.Description || 'Imported expense'
+            })
+            importedCount++
+          }
+        }
+        
+        try { await forceUploadAllLocalData() } catch (_) {}
+        alert(`Successfully imported ${importedCount} expenses and synced to cloud!`)
+      } catch (err) {
+        console.error('Expense Import failed:', err)
+        alert('Failed to parse expense excel file. Please check the file format. Expected columns: Date, Category, Amount, Description, Payment Method')
+      }
+      e.target.value = null
     }
     reader.readAsBinaryString(file)
   }
@@ -296,14 +339,31 @@ export default function Sacco() {
   const handleSaveInvestor = async (e) => {
     e.preventDefault()
     if (editingInvestor) {
+      const addedAmount = Number(investorForm.addPaymentAmount) || 0
+      const currentPaid = Number(editingInvestor.investmentAmount) || 0
+      const newTotal = currentPaid + addedAmount
+
       await updateInvestor(editingInvestor.id, {
         category: investorForm.investorType || investorForm.category,
         investorType: investorForm.investorType || investorForm.category,
         investmentPhase: investorForm.investmentPhase || 'Initial',
         marketingStrategy: investorForm.marketingStrategy || false,
-        investmentAmount: Number(investorForm.investmentAmount) || 8000000,
-        cowsPerYear: Number(investorForm.cowsPerYear) || 0
+        investmentAmount: newTotal
       })
+
+      // Log the transaction if money was added
+      if (addedAmount > 0) {
+        await addTransaction({
+          date: format(new Date(), 'yyyy-MM-dd'),
+          type: 'Income',
+          source: investorForm.isBanked ? 'Bank' : investorForm.paymentMethod,
+          category: 'Investment Deposit',
+          amount: addedAmount,
+          paymentMethod: investorForm.paymentMethod,
+          isBanked: investorForm.isBanked,
+          description: `Investment payment for ${editingInvestor.name}`
+        })
+      }
     }
     setIsInvestorModalOpen(false)
     setEditingInvestor(null)
@@ -616,12 +676,13 @@ export default function Sacco() {
           investorType: row.investorType || row.category || 'Money Maker',
           investmentPhase: row.investmentPhase || 'Phase 3',
           marketingStrategy: row.marketingStrategy || false,
-          investmentAmount: String(row.investmentAmount || '0'),
-          cowsPerYear: String(row.cowsPerYear || '0')
+          addPaymentAmount: '',
+          paymentMethod: 'Cash',
+          isBanked: false
         })
         setIsInvestorModalOpen(true)
       }} className="btn-secondary px-2.5 py-1 text-xs text-white flex items-center gap-1">
-        <Edit2 size={12} /> Configure
+        <Edit2 size={12} /> Add Payment
       </button>
     )}
   ]
@@ -806,13 +867,14 @@ export default function Sacco() {
               }} 
               className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-2"
             >
-              <Trash2 size={16} /> Clear Database & Reload
+              <Trash2 size={16} /> Clear Database
             </button>
             <button 
               onClick={async () => {
-                if (window.confirm('This will push ALL local SACCO data (members, shares, savings, investors) to the cloud. This will sync the missing 179+ members to Cloudflare. Proceed?')) {
+                if (window.confirm('This will push ALL local SACCO data (members, shares, savings, investors) to the cloud. Proceed?')) {
                   try {
-                    await forceUploadAllLocalData()
+                    const { forceUploadSaccoToSupabase } = await import('../../services/supabaseSyncEngine')
+                    await forceUploadSaccoToSupabase()
                     alert('✅ All local data has been uploaded to the cloud! Hard refresh on other devices.')
                   } catch (e) {
                     alert('❌ Upload failed: ' + e.message)
@@ -822,6 +884,19 @@ export default function Sacco() {
               className="btn-secondary text-blue-400 border border-blue-500/30 flex items-center gap-2"
             >
               <Upload size={16} /> Force Sync to Cloud
+            </button>
+            <input 
+              type="file" 
+              accept=".xlsx, .xls, .csv" 
+              onChange={handleExpenseExcelImport} 
+              ref={expenseExcelInputRef} 
+              className="hidden" 
+            />
+            <button 
+              onClick={() => expenseExcelInputRef.current.click()} 
+              className="btn-secondary text-indigo-400 flex items-center gap-2"
+            >
+              <Upload size={16} /> Import Expenses
             </button>
             <button 
               onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} 
@@ -1438,67 +1513,46 @@ export default function Sacco() {
             </div>
           </div>
 
-          {(investorForm.investorType || investorForm.category) === 'Money Maker' ? (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Investment Amount (UGX) *</label>
-                <input 
-                  required 
-                  type="number" 
-                  className="input-field font-bold text-white" 
-                  value={investorForm.investmentAmount} 
-                  onChange={e => setInvestorForm({ ...investorForm, investmentAmount: e.target.value })} 
-                />
-                <p className="text-xs text-slate-500 mt-1">One unit = <span className="text-slate-300 font-medium">UGX 8,000,000</span>. At 8M+ this investor is marked <span className="text-emerald-400">Cleared</span>.</p>
-              </div>
-
-              <div className={`p-3 rounded-xl border space-y-2 ${
-                Number(investorForm.investmentAmount) >= 8000000 
-                  ? 'bg-emerald-500/10 border-emerald-500/20' 
-                  : 'bg-red-500/10 border-red-500/20'
-              }`}>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Status:</span>
-                  <span className={`font-bold ${Number(investorForm.investmentAmount) >= 8000000 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {Number(investorForm.investmentAmount) >= 8000000 ? '✓ Cleared' : '✗ Not Cleared'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Investment Units:</span>
-                  <span className="text-white font-bold">{((Number(investorForm.investmentAmount) || 0) / 8000000).toFixed(2)} Units</span>
-                </div>
-                <div className="flex justify-between text-xs border-t border-white/5 pt-2">
-                  <span className="text-emerald-400 font-medium">Annual Payout (350K/Unit):</span>
-                  <span className="text-emerald-400 font-bold">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 0) / 8000000) * 350000))} / yr</span>
-                </div>
-              </div>
-
-              <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl flex items-center justify-between">
-                <span className="text-xs font-medium text-emerald-400">5-Year Projection Payout:</span>
-                <span className="text-sm font-bold text-white">{formatUGX(Math.round(((Number(investorForm.investmentAmount) || 0) / 8000000) * 350000 * 5))}</span>
-              </div>
+          <div className="space-y-4">
+            <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-1">
+              <p className="text-xs text-slate-400">Current Total Paid:</p>
+              <p className="text-lg font-bold text-white">{formatUGX(editingInvestor?.investmentAmount || 0)}</p>
             </div>
-          ) : (
+
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Number of Cows Received Every Year *</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Add Payment Amount (UGX)</label>
               <input 
-                required 
                 type="number" 
-                className="input-field" 
-                value={investorForm.cowsPerYear} 
-                onChange={e => setInvestorForm({ ...investorForm, cowsPerYear: e.target.value })} 
+                className="input-field font-bold text-white" 
+                placeholder="Leave empty if just updating settings"
+                value={investorForm.addPaymentAmount} 
+                onChange={e => setInvestorForm({ ...investorForm, addPaymentAmount: e.target.value })} 
               />
-              
-              <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-xl flex items-center justify-between mt-4">
-                <span className="text-xs font-medium text-indigo-400">Cows After 1 Year:</span>
-                <span className="text-sm font-bold text-white">{Number(investorForm.cowsPerYear) || 0} cows</span>
-              </div>
-              <div className="bg-indigo-500/10 border border-indigo-500/20 p-3 rounded-xl flex items-center justify-between mt-2">
-                <span className="text-xs font-medium text-indigo-400">Cows After 5 Years (Projected):</span>
-                <span className="text-sm font-bold text-white">{(Number(investorForm.cowsPerYear) || 0) * 5} cows</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-2">Payment Method</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['Cash','MTN MM','Airtel MM','Bank','Cheque','Other'].map(m => (
+                  <button key={m} type="button" onClick={() => setInvestorForm({ ...investorForm, paymentMethod: m })}
+                    className={`py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                      investorForm.paymentMethod === m ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                    }`}>{m}</button>
+                ))}
               </div>
             </div>
-          )}
+
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div>
+                <p className="text-xs font-semibold text-white">Already Banked?</p>
+                <p className="text-[10px] text-slate-500">Toggle on if cash/MM has already been deposited to bank</p>
+              </div>
+              <button type="button" onClick={() => setInvestorForm({ ...investorForm, isBanked: !investorForm.isBanked })}
+                className={`w-10 h-5 rounded-full transition-colors relative ${ investorForm.isBanked ? 'bg-emerald-500' : 'bg-white/20'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ investorForm.isBanked ? 'translate-x-5' : ''}`}/>
+              </button>
+            </div>
+          </div>
 
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
             <button type="button" className="btn-secondary" onClick={() => setIsInvestorModalOpen(false)}>Cancel</button>

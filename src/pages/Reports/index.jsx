@@ -66,12 +66,9 @@ export default function Reports() {
     const pivotedRowsMap = {}
     filteredRecords.forEach(r => {
       let dateKey = r.date;
-      if (period === 'weekly') {
+      if (period === 'monthly') {
         const d = new Date(r.date);
         dateKey = startOfWeek(d, { weekStartsOn: 1 }).toISOString().split('T')[0];
-      } else if (period === 'monthly') {
-        const d = new Date(r.date);
-        dateKey = startOfMonth(d).toISOString().split('T')[0];
       }
 
       const key = `${dateKey}_${r.animalId}`
@@ -166,10 +163,10 @@ export default function Reports() {
     
     if (period === 'weekly') {
       title = 'Weekly Milk Production Report';
-      groupFormat = (val) => `Week of ${new Date(val).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+      groupFormat = (val) => new Date(val).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     } else if (period === 'monthly') {
       title = 'Monthly Milk Production Report';
-      groupFormat = (val) => new Date(val).toLocaleDateString('en-GB', { year: 'numeric', month: 'long' });
+      groupFormat = (val) => `Week of ${new Date(val).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}`;
     }
 
     if (type === 'pdf') {
