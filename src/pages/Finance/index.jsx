@@ -8,6 +8,8 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import PinGuard from '../../components/ui/PinGuard'
 import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
+import * as XLSX from 'xlsx'
+import { useRef } from 'react'
 
 export default function Finance() {
   const { transactions, loadTransactions, getMonthlyStats, getDailyStats, addTransaction, updateTransaction, deleteTransaction } = useFinanceStore()
@@ -18,8 +20,47 @@ export default function Finance() {
 
   const initialForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', source: 'Bank', category: '', amount: '', description: '', reference: '' }
   const [formData, setFormData] = useState(initialForm)
+  const excelInputRef = useRef(null)
 
   useEffect(() => { loadTransactions() }, [])
+
+  const handleExpenseExcelImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws)
+
+        let importedCount = 0
+        for (const row of data) {
+          const amount = Number(row.Amount) || 0
+          if (amount > 0) {
+            await addTransaction({
+              date: row.Date || format(new Date(), 'yyyy-MM-dd'),
+              type: 'Expense',
+              source: row['Payment Method'] === 'Bank' ? 'Bank' : 'Petty Cash',
+              category: row.Category || 'General Expense',
+              amount,
+              description: row.Description || 'Imported expense',
+              reference: row.Reference || ''
+            })
+            importedCount++
+          }
+        }
+        alert(`Successfully imported ${importedCount} expenses!`)
+      } catch (err) {
+        console.error('Expense Import failed:', err)
+        alert('Failed to parse expense excel file. Expected columns: Date, Category, Amount, Description, Payment Method, Reference')
+      }
+      e.target.value = null
+    }
+    reader.readAsBinaryString(file)
+  }
 
   const monthStats = getMonthlyStats()
   const dailyStats = getDailyStats()
@@ -81,7 +122,22 @@ export default function Finance() {
           <h1 className="page-title">Financial Management</h1>
           <p className="text-slate-400 text-sm mt-1">Track income, expenses, and farm profitability.</p>
         </div>
-        <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Transaction</button>
+        <div className="flex gap-2">
+          <input 
+            type="file" 
+            accept=".xlsx, .xls, .csv" 
+            onChange={handleExpenseExcelImport} 
+            ref={excelInputRef} 
+            className="hidden" 
+          />
+          <button 
+            onClick={() => excelInputRef.current.click()} 
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Edit2 size={16} /> Import Expenses
+          </button>
+          <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={16} /> Add Transaction</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

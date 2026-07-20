@@ -62,11 +62,12 @@ export default function Reports() {
       const prefix = `${year}-${month}`
       filteredRecords = milkRecords.filter(r => r.date.startsWith(prefix))
     }
+    // For 'all_time_weekly', we do not filter filteredRecords.
 
     const pivotedRowsMap = {}
     filteredRecords.forEach(r => {
       let dateKey = r.date;
-      if (period === 'monthly') {
+      if (period === 'monthly' || period === 'all_time_weekly') {
         const d = new Date(r.date);
         dateKey = startOfWeek(d, { weekStartsOn: 1 }).toISOString().split('T')[0];
       }
@@ -165,7 +166,11 @@ export default function Reports() {
       title = 'Weekly Milk Production Report';
       groupFormat = (val) => new Date(val).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     } else if (period === 'monthly') {
-      title = 'Monthly Milk Production Report';
+      const monthName = new Date(selectedMonthlyDate).toLocaleString('default', { month: 'long', year: 'numeric' });
+      title = `${monthName} Milk Production Report`;
+      groupFormat = (val) => `Week of ${new Date(val).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+    } else if (period === 'all_time_weekly') {
+      title = 'All-Time Weekly Income Report';
       groupFormat = (val) => `Week of ${new Date(val).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}`;
     }
 
@@ -283,6 +288,11 @@ export default function Reports() {
           />
         </div>
       )
+    },
+    { 
+      title: 'All-Time Weekly Income', 
+      desc: 'Milk production aggregated by week since the app started.', 
+      action: (type) => handleExportMilk(type, 'all_time_weekly')
     },
     { title: 'Financial Statement', desc: 'Income and expenses ledger.', action: (type) => handleExportFinance(type) },
     { title: 'Health & Vet', desc: 'Vaccinations and treatment history.', action: (type) => handleExportHealth(type) },

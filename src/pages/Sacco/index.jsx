@@ -445,7 +445,19 @@ export default function Sacco() {
         id: m.id,
         name: m.name,
         category: m.category,
-        savingAmount: count
+        savingAmount: count,
+        jan: m.jan || 0,
+        feb: m.feb || 0,
+        mar: m.mar || 0,
+        apr: m.apr || 0,
+        may: m.may || 0,
+        jun: m.jun || 0,
+        jul: m.jul || 0,
+        aug: m.aug || 0,
+        sep: m.sep || 0,
+        oct: m.oct || 0,
+        nov: m.nov || 0,
+        dec: m.dec || 0
       }
     })
 
@@ -587,6 +599,18 @@ export default function Sacco() {
       </button>
     )},
     { key: 'category', label: 'Category' },
+    { key: 'jan', label: 'Jan', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'feb', label: 'Feb', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'mar', label: 'Mar', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'apr', label: 'Apr', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'may', label: 'May', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'jun', label: 'Jun', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'jul', label: 'Jul', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'aug', label: 'Aug', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'sep', label: 'Sep', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'oct', label: 'Oct', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'nov', label: 'Nov', render: (val) => val > 0 ? formatUGX(val) : '—' },
+    { key: 'dec', label: 'Dec', render: (val) => val > 0 ? formatUGX(val) : '—' },
     { key: 'savingAmount', label: 'Savings Balance', render: (val) => <span className="text-blue-400 font-bold">{formatUGX(val)}</span> },
     { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
       <div className="flex gap-2">
