@@ -163,7 +163,12 @@ export default function Reports() {
     let groupFormat = (val) => new Date(val).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     
     if (period === 'weekly') {
-      title = 'Weekly Milk Production Report';
+      const targetDate = new Date(selectedWeeklyDate);
+      const start = startOfWeek(targetDate, { weekStartsOn: 1 });
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const formatOpts = { month: 'short', day: 'numeric', year: 'numeric' };
+      title = `Weekly Milk Production Report (${start.toLocaleDateString('en-GB', formatOpts)} to ${end.toLocaleDateString('en-GB', formatOpts)})`;
       groupFormat = (val) => new Date(val).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     } else if (period === 'monthly') {
       const monthName = new Date(selectedMonthlyDate).toLocaleString('default', { month: 'long', year: 'numeric' });
