@@ -206,6 +206,7 @@ export default function Sacco() {
         alert('Failed to parse excel file. Please check the file format.')
       }
       e.target.value = null // reset
+    }
     reader.readAsBinaryString(file)
   }
 
