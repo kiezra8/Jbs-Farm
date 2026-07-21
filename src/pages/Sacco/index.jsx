@@ -641,8 +641,8 @@ export default function Sacco() {
     { key: 'name', label: 'Investor Name', render: (val, row) => {
       const isMarketing = row.marketingStrategy
       const paid = row.investmentAmount || 0
-      const program = row.programAmount || row.investmentAmount || 8000000
-      const cleared = row.status === 'CLEARED' || (paid >= program && program > 0) || paid >= 8000000
+      const program = row.programAmount || 8000000
+      const cleared = row.status === 'CLEARED' || (paid >= program && program > 0)
       const markColor = isMarketing 
         ? 'bg-yellow-500' 
         : cleared 
@@ -666,13 +666,13 @@ export default function Sacco() {
     }},
     { key: 'investmentPhase', label: 'Phase', render: (val) => <span className="text-slate-300 text-xs">{val || 'Phase 3'}</span> },
     { key: 'programAmount', label: 'Program', render: (val, row) => {
-      const program = val || row.investmentAmount || 0
+      const program = val || 8000000
       return <span className="text-slate-300 font-medium">{formatUGX(program)}</span>
     }},
     { key: 'investmentAmount', label: 'Paid', render: (val, row) => {
-      const program = row.programAmount || val || 0
+      const program = row.programAmount || 8000000
       const paid = val || 0
-      const cleared = row.status === 'CLEARED' || paid >= program
+      const cleared = row.status === 'CLEARED' || (paid >= program && program > 0)
       return (
         <div>
           <p className={`font-bold ${cleared ? 'text-emerald-400' : 'text-orange-400'}`}>{formatUGX(paid)}</p>
@@ -688,8 +688,8 @@ export default function Sacco() {
     }},
     { key: 'status', label: 'Status', render: (val, row) => {
       const paid = row.investmentAmount || 0
-      const program = row.programAmount || paid
-      const cleared = val === 'CLEARED' || paid >= program
+      const program = row.programAmount || 8000000
+      const cleared = val === 'CLEARED' || (paid >= program && program > 0)
       const isMarketing = row.marketingStrategy
       if (isMarketing) return <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/20">Marketing</span>
       return cleared
@@ -728,6 +728,7 @@ export default function Sacco() {
     { key: 'date', label: 'Date', render: (val) => {
       try { return format(new Date(val), 'dd MMM yyyy') } catch { return val }
     }},
+    { key: 'memberName', label: 'Person', render: (val) => <span className="font-semibold text-white">{val || '—'}</span> },
     { key: 'type', label: 'Type', render: (val) => (
       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${val === 'Income' ? 'bg-green-500/10 text-green-400' : val === 'Expense' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
         {val}
@@ -1078,77 +1079,143 @@ export default function Sacco() {
               )}
 
               {activeTab === 'accounts' && (() => {
-                const today = format(new Date(), 'yyyy-MM-dd')
-                const incomeTx = transactions.filter(t => t.type === 'Income')
-                const allUnbanked = incomeTx.filter(t => !t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                // Only show Income transactions (money coming in)
+                const incomeTx = [...transactions]
+                  .filter(t => t.type === 'Income')
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .map(t => ({
+                    ...t,
+                    memberName: members.find(m => m.id === t.memberId)?.name || t.description || '—'
+                  }))
 
-                const dailyList = incomeTx.filter(t => t.date >= today)
-                const dailyTotal = dailyList.reduce((s, t) => s + (Number(t.amount) || 0), 0)
-                const dailyBanked = dailyList.filter(t => t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0)
-                const dailyUnbanked = dailyTotal - dailyBanked
-                const daily = { total: dailyTotal, banked: dailyBanked, unbanked: dailyUnbanked, count: dailyList.length }
-
-                const byMethod = {}
-                incomeTx.filter(t => !t.isBanked).forEach(t => {
+                // Group by payment method
+                const methodOrder = ['Cash', 'MTN MM', 'Airtel MM', 'Bank', 'Cheque', 'Other']
+                const grouped = {}
+                incomeTx.forEach(t => {
                   const pm = t.paymentMethod || 'Cash'
-                  byMethod[pm] = (byMethod[pm] || 0) + (Number(t.amount) || 0)
+                  if (!grouped[pm]) grouped[pm] = []
+                  grouped[pm].push(t)
                 })
 
+                // Summary per method
+                const methodSummary = Object.entries(grouped).map(([pm, txs]) => ({
+                  pm,
+                  total: txs.reduce((s, t) => s + (Number(t.amount) || 0), 0),
+                  banked: txs.filter(t => t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+                  unbanked: txs.filter(t => !t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0),
+                  count: txs.length,
+                  txs
+                }))
+
+                const grandTotal = incomeTx.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                const grandBanked = incomeTx.filter(t => t.isBanked).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                const grandUnbanked = grandTotal - grandBanked
+
+                // Columns for each method table (no payment method column needed since it's per table)
+                const methodTxColumns = [
+                  { key: 'date', label: 'Date', render: (val) => {
+                    try { return format(new Date(val), 'dd MMM yyyy') } catch { return val }
+                  }},
+                  { key: 'memberName', label: 'Person', render: (val) => <span className="font-semibold text-white">{val || '—'}</span> },
+                  { key: 'category', label: 'Category', render: (val) => <span className="text-slate-300 text-xs">{val || '—'}</span> },
+                  { key: 'isBanked', label: 'Banked?', render: (val) => val
+                    ? <span className="text-emerald-400 text-xs font-semibold">✓ Banked</span>
+                    : <span className="text-orange-400 text-xs font-semibold">⚠ Not Yet</span>
+                  },
+                  { key: 'amount', label: 'Amount', render: (val) => (
+                    <span className="font-bold text-green-400">{formatUGX(val)}</span>
+                  )},
+                  { key: 'description', label: 'Note', render: (val) => <span className="text-xs text-slate-500 truncate max-w-[120px] block">{val || '—'}</span> },
+                  { key: 'actions', label: '', sortable: false, render: (_, row) => (
+                    <button onClick={() => { setSelectedItem(row); setIsTxDeleteOpen(true) }} className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                ]
+
+                const PM_HEADER = {
+                  'Cash':      { color: 'text-amber-400', bg: 'bg-amber-500/5 border-amber-500/20', badge: 'bg-amber-500/15 text-amber-400 border border-amber-500/20' },
+                  'MTN MM':    { color: 'text-yellow-300', bg: 'bg-yellow-500/5 border-yellow-500/20', badge: 'bg-yellow-500/15 text-yellow-300 border border-yellow-500/20' },
+                  'Airtel MM': { color: 'text-red-400', bg: 'bg-red-500/5 border-red-500/20', badge: 'bg-red-500/15 text-red-400 border border-red-500/20' },
+                  'Bank':      { color: 'text-blue-400', bg: 'bg-blue-500/5 border-blue-500/20', badge: 'bg-blue-500/15 text-blue-400 border border-blue-500/20' },
+                  'Cheque':    { color: 'text-violet-400', bg: 'bg-violet-500/5 border-violet-500/20', badge: 'bg-violet-500/15 text-violet-400 border border-violet-500/20' },
+                  'Other':     { color: 'text-slate-400', bg: 'bg-slate-500/5 border-slate-500/20', badge: 'bg-slate-500/15 text-slate-400 border border-slate-500/20' },
+                }
+
                 return (
-                  <div className="space-y-6">
-                    {/* Period Summary Cards */}
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <TrendingUp size={14} /> Income Summary (All Types: Savings, Shares, Investments)
+                  <div className="space-y-8">
+
+                    {/* Per Payment Method Tables */}
+                    {(methodOrder.filter(pm => grouped[pm]).concat(Object.keys(grouped).filter(pm => !methodOrder.includes(pm)))).map(pm => {
+                      const summary = methodSummary.find(s => s.pm === pm)
+                      if (!summary) return null
+                      const style = PM_HEADER[pm] || PM_HEADER['Other']
+                      return (
+                        <div key={pm} className={`rounded-2xl border p-4 space-y-4 ${style.bg}`}>
+                          {/* Method Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${style.badge}`}>{pm}</span>
+                              <span className="text-slate-400 text-xs">{summary.count} transaction{summary.count !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-right">
+                              <div>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Total</p>
+                                <p className={`text-lg font-bold ${style.color}`}>{formatUGX(summary.total)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-emerald-500 uppercase tracking-wider">Banked</p>
+                                <p className="text-sm font-semibold text-emerald-400">{formatUGX(summary.banked)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-orange-500 uppercase tracking-wider">Not Banked</p>
+                                <p className="text-sm font-semibold text-orange-400">{formatUGX(summary.unbanked)}</p>
+                              </div>
+                            </div>
+                          </div>
+                          {/* Progress bar banked vs total */}
+                          <div className="w-full bg-white/10 rounded-full h-1.5">
+                            <div className="bg-emerald-500 h-1.5 rounded-full transition-all" style={{ width: summary.total > 0 ? `${Math.min(100, (summary.banked / summary.total) * 100).toFixed(0)}%` : '0%' }} />
+                          </div>
+                          {/* Transactions Table for this method */}
+                          <DataTable columns={methodTxColumns} data={summary.txs} pageSize={10} />
+                        </div>
+                      )
+                    })}
+
+                    {/* Overall Grand Total */}
+                    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5">
+                      <h3 className="text-sm font-semibold text-emerald-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <TrendingUp size={14} /> Overall Grand Total (All Payment Methods)
                       </h3>
-                      <div className="grid grid-cols-1 gap-4">
-                        {[
-                          { label: 'Today', data: daily }
-                        ].map(({ label, data }) => (
-                          <div key={label} className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
-                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{label}</p>
-                            <p className="text-xl font-bold text-white">{formatUGX(data.total)}</p>
-                            <div className="w-full bg-white/10 rounded-full h-1.5">
-                              <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: data.total > 0 ? `${Math.min(100, (data.banked / data.total) * 100).toFixed(0)}%` : '0%' }} />
-                            </div>
-                            <div className="flex justify-between text-[10px] font-medium">
-                              <span className="text-emerald-400">✓ Banked: {formatUGX(data.banked)}</span>
-                              <span className="text-orange-400">⚠ Unbanked: {formatUGX(data.unbanked)}</span>
-                            </div>
-                            <p className="text-[10px] text-slate-500">{data.count} transaction{data.count !== 1 ? 's' : ''}</p>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="bg-white/5 rounded-xl p-3 text-center">
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Total Income</p>
+                          <p className="text-xl font-bold text-white">{formatUGX(grandTotal)}</p>
+                          <p className="text-[10px] text-slate-500 mt-1">{incomeTx.length} transactions</p>
+                        </div>
+                        <div className="bg-emerald-500/10 rounded-xl p-3 text-center">
+                          <p className="text-[10px] text-emerald-500 uppercase tracking-wider mb-1">✓ Banked</p>
+                          <p className="text-xl font-bold text-emerald-400">{formatUGX(grandBanked)}</p>
+                          <p className="text-[10px] text-slate-500 mt-1">{incomeTx.filter(t => t.isBanked).length} transactions</p>
+                        </div>
+                        <div className="bg-orange-500/10 rounded-xl p-3 text-center">
+                          <p className="text-[10px] text-orange-500 uppercase tracking-wider mb-1">⚠ Not Banked</p>
+                          <p className="text-xl font-bold text-orange-400">{formatUGX(grandUnbanked)}</p>
+                          <p className="text-[10px] text-slate-500 mt-1">{incomeTx.filter(t => !t.isBanked).length} transactions</p>
+                        </div>
+                      </div>
+                      {/* Summary badges per method */}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {methodSummary.map(({ pm, total }) => (
+                          <div key={pm} className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${PM_COLOR[pm] || PM_COLOR['Other']}`}>
+                            <span>{pm}:</span>
+                            <span className="font-bold">{formatUGX(total)}</span>
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    {/* Unbanked by Payment Method */}
-                    {allUnbanked > 0 && (
-                      <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-sm font-semibold text-orange-400 flex items-center gap-2">
-                            <Wallet size={14} /> Cash / MM On Hand (Not Yet Banked)
-                          </h3>
-                          <span className="text-lg font-bold text-orange-300">{formatUGX(allUnbanked)}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.entries(byMethod).map(([pm, amt]) => (
-                            <div key={pm} className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${PM_COLOR[pm] || PM_COLOR['Other']}`}>
-                              <span>{pm}:</span>
-                              <span className="font-bold">{formatUGX(amt)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-[10px] text-orange-400/70 mt-2">⚠ Action required: This money has not been deposited to the bank yet.</p>
-                      </div>
-                    )}
-
-                    {/* Full Transaction Ledger */}
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <DollarSign size={14} /> All Transactions Ledger
-                      </h3>
-                      <DataTable columns={txColumns} data={txData} pageSize={15} />
-                    </div>
                   </div>
                 )
               })()}
