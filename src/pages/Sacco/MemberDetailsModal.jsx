@@ -77,6 +77,7 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
           investorType: memberInvestor.investorType || memberInvestor.category || 'Money Maker',
           investmentPhase: memberInvestor.investmentPhase || 'Initial',
           marketingStrategy: memberInvestor.marketingStrategy || false,
+          pairedWith: memberInvestor.pairedWith || ''
         })
         const target = memberInvestor.programAmount || memberInvestor.investmentAmount || 8000000
         setInvestorUnits(String(Math.ceil(target / 8000000) || 1))
@@ -84,6 +85,7 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
       } else {
         setInvestorUnits('1')
         setInvestorPaid(0)
+        setInvestorData(prev => ({ ...prev, pairedWith: '' }))
       }
     }
   }, [member, memberShares, memberSavings, memberInvestor, isOpen])
@@ -173,15 +175,17 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
       await updateInvestor(memberInvestor.id, {
         ...investorData,
         programAmount: targetAmount,
-        investmentAmount: investorPaid // ensure we don't wipe out the paid amount
+        investmentAmount: investorPaid,
+        pairedWith: investorData.pairedWith || '',
+        memberId: member.id
       })
     } else {
-      // Create new investor record
       await updateInvestor(crypto.randomUUID(), {
         memberId: member.id,
         ...investorData,
         programAmount: targetAmount,
-        investmentAmount: investorPaid
+        investmentAmount: investorPaid,
+        pairedWith: investorData.pairedWith || ''
       })
     }
     alert('Investor config saved!')
@@ -192,36 +196,27 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
     const amountToAdd = Number(investorAddPayment) || 0
     if (amountToAdd <= 0) return alert('Enter a valid payment amount')
 
-    const newPaidAmount = investorPaid + amountToAdd
-    const targetAmount = (Number(investorUnits) || 1) * 8000000
-
-    if (memberInvestor) {
-      await updateInvestor(memberInvestor.id, {
-        investmentAmount: newPaidAmount,
-        programAmount: targetAmount
-      })
-    } else {
-      await updateInvestor(crypto.randomUUID(), {
+    let invId = memberInvestor?.id
+    if (!memberInvestor) {
+      invId = crypto.randomUUID()
+      await updateInvestor(invId, {
         memberId: member.id,
         ...investorData,
-        programAmount: targetAmount,
-        investmentAmount: newPaidAmount
+        programAmount: (Number(investorUnits) || 1) * 8000000,
+        investmentAmount: 0
       })
     }
 
-    await addTransaction({
-      memberId: member.id,
-      date: format(new Date(), 'yyyy-MM-dd'),
-      type: 'Income',
-      source: isBanked ? 'Bank' : paymentMethod,
-      category: 'Investment Deposit',
-      amount: amountToAdd,
+    await useSaccoStore.getState().recordInvestorPayment(invId, amountToAdd, {
       paymentMethod,
-      isBanked,
-      description: `Investment payment for ${member.name}`
+      isBanked
     })
 
-    setInvestorPaid(newPaidAmount)
+    // Refresh display value
+    const updatedInv = useSaccoStore.getState().investors.find(i => i.memberId === member.id)
+    if (updatedInv) {
+      setInvestorPaid(Number(updatedInv.investmentAmount) || 0)
+    }
     setInvestorAddPayment('')
     alert('Investment payment recorded successfully!')
   }
@@ -452,6 +447,18 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                     <option value="4">4 Units (32M)</option>
                     <option value="5">5 Units (40M)</option>
                     <option value="10">10 Units (80M)</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Pair with another Investor</label>
+                  <select className="input-field" value={investorData.pairedWith || ''} onChange={e => setInvestorData({...investorData, pairedWith: e.target.value})}>
+                    <option value="">-- No Pairing --</option>
+                    {members
+                      .filter(m => m.id !== member.id && (Array.isArray(m.category) ? m.category : [m.category]).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)))
+                      .map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))
+                    }
                   </select>
                 </div>
               </div>

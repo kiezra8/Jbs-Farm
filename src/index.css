@@ -289,3 +289,235 @@ select.input-field option {
 
 /* ─── Timeline ─── */
 .timeline-line { @apply absolute left-3 top-6 bottom-0 w-px bg-white/10; }
+
+/* ─── Print Styles ─── */
+@media print {
+  /* Reset page layout */
+  @page {
+    size: A4 landscape;
+    margin: 12mm 10mm;
+  }
+
+  /* Force light background for readability */
+  *, *::before, *::after {
+    color: #000 !important;
+    background: white !important;
+    background-color: white !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide all UI chrome */
+  .sidebar,
+  nav[class*="sidebar"],
+  [class*="Sidebar"],
+  [class*="Topbar"],
+  header,
+  .topbar,
+  .print\:hidden,
+  button,
+  input[type="file"],
+  input[type="text"],
+  input[type="search"],
+  input[type="date"],
+  input[type="number"],
+  select,
+  .modal-overlay,
+  .modal-content,
+  [class*="modal"],
+  [class*="search"],
+  [class*="filter"],
+  [class*="Filter"],
+  [class*="PinGuard"],
+  [class*="pin-guard"],
+  .search-bar,
+  form {
+    display: none !important;
+  }
+
+  /* Reset body and root layout */
+  html, body, #root {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 10pt !important;
+    font-family: 'Inter', Arial, sans-serif !important;
+    min-height: unset !important;
+  }
+
+  /* Remove sidebar margin from main content */
+  .main-content,
+  .main-content.expanded,
+  [style*="margin-left"] {
+    margin-left: 0 !important;
+  }
+
+  /* Make page layout block */
+  .min-h-screen.flex,
+  .flex-1.flex.flex-col {
+    display: block !important;
+  }
+
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Remove animations */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Glass cards become plain white boxes */
+  .glass-card,
+  .glass-card-hover,
+  .kpi-card {
+    border: 1px solid #ccc !important;
+    border-radius: 4px !important;
+    padding: 8pt !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Page title */
+  .page-title, h1 {
+    font-size: 16pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 8pt !important;
+    border-bottom: 2px solid #333 !important;
+    padding-bottom: 4pt !important;
+  }
+
+  h2, h3 {
+    font-size: 12pt !important;
+    font-weight: 600 !important;
+  }
+
+  /* Summary KPI grid */
+  .grid {
+    display: grid !important;
+  }
+
+  /* Tables */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8pt !important;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  th {
+    background: #e5e5e5 !important;
+    color: #000 !important;
+    font-weight: 700 !important;
+    padding: 5pt 6pt !important;
+    border: 1px solid #aaa !important;
+    text-align: left !important;
+    font-size: 7.5pt !important;
+    text-transform: uppercase;
+    letter-spacing: 0.3pt;
+  }
+
+  td {
+    padding: 4pt 6pt !important;
+    border: 1px solid #ddd !important;
+    vertical-align: top !important;
+    font-size: 8pt !important;
+    word-break: break-word;
+  }
+
+  tr:nth-child(even) td {
+    background: #f7f7f7 !important;
+  }
+
+  /* Status badges printed as text with border */
+  [class*="badge"],
+  [class*="badge-"],
+  span[class*="rounded-full"],
+  span[class*="px-2"] {
+    border: 1px solid #999 !important;
+    border-radius: 3px !important;
+    padding: 1pt 3pt !important;
+    font-size: 7pt !important;
+    background: transparent !important;
+    display: inline-block !important;
+  }
+
+  /* Color accents for CLEARED/PENDING status */
+  .text-green-400, .text-emerald-400 { color: #166534 !important; }
+  .text-red-400 { color: #991b1b !important; }
+  .text-amber-400, .text-orange-400 { color: #92400e !important; }
+  .text-blue-400, .text-indigo-400 { color: #1e40af !important; }
+  .text-purple-400 { color: #6b21a8 !important; }
+  .text-slate-400, .text-slate-300 { color: #475569 !important; }
+  .text-white { color: #000 !important; }
+
+  /* Border accents for KPI cards */
+  .border-l-green-500, .border-l-4.border-l-green-500 { border-left-color: #166534 !important; }
+  .border-l-red-500 { border-left-color: #991b1b !important; }
+  .border-l-blue-500 { border-l-color: #1e40af !important; }
+  .border-l-amber-500 { border-left-color: #92400e !important; }
+
+  /* Progress bars — hide on print */
+  [class*="progress"] { display: none !important; }
+
+  /* Sidebar nav inside sacco — hide it */
+  .flex.flex-col.gap-2.w-56 { display: none !important; }
+
+  /* Remove flex layout wrapper so content spans full width */
+  .flex.flex-col.lg\:flex-row.gap-6 {
+    display: block !important;
+  }
+
+  .flex-1.min-w-0 {
+    width: 100% !important;
+  }
+
+  /* Prevent page breaks inside cards */
+  .space-y-6 > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Print header auto-injected */
+  body::before {
+    content: "JBS Farm Management System — " attr(data-print-title) " Report";
+    display: block;
+    font-size: 10pt;
+    font-weight: 600;
+    color: #333 !important;
+    border-bottom: 1px solid #999;
+    padding-bottom: 4pt;
+    margin-bottom: 10pt;
+  }
+
+  /* DataTable pagination and sort arrows hidden */
+  [class*="pagination"],
+  [class*="Pagination"],
+  [aria-label*="sort"],
+  svg { display: none !important; }
+
+  /* Scrollable containers become full height */
+  [class*="overflow-"] {
+    overflow: visible !important;
+  }
+
+  /* Remove max-height limitations */
+  [class*="max-h-"] {
+    max-height: none !important;
+  }
+}
+

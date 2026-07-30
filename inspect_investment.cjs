@@ -10,7 +10,7 @@ console.log(wb.SheetNames)
 for (const sheetName of wb.SheetNames) {
   const ws = wb.Sheets[sheetName]
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
-  
+
   if (rows.length > 0) {
     console.log(`\n=== HEADERS for sheet "${sheetName}" ===`)
     console.log(Object.keys(rows[0]))

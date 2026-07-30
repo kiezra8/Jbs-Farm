@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download } from 'lucide-react'
+import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download, Printer } from 'lucide-react'
 import { useSaccoStore } from '../../store/useSaccoStore'
 import DataTable from '../../components/ui/DataTable'
 import Modal from '../../components/ui/Modal'
@@ -220,33 +220,122 @@ export default function Sacco() {
       try {
         const bstr = evt.target.result
         const wb = XLSX.read(bstr, { type: 'binary' })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const data = XLSX.utils.sheet_to_json(ws)
-
+        
         let importedCount = 0
-        for (const row of data) {
-          // Expected columns: Date, Category, Amount, Description, Payment Method
-          const amount = Number(row.Amount) || 0
-          if (amount > 0) {
-            await addTransaction({
-              date: row.Date || format(new Date(), 'yyyy-MM-dd'),
-              type: 'Expense',
-              source: row['Payment Method'] === 'Bank' ? 'Bank' : 'Petty Cash',
-              category: row.Category || 'General Expense',
-              amount,
-              paymentMethod: row['Payment Method'] || 'Cash',
-              isBanked: row['Payment Method'] === 'Bank',
-              description: row.Description || 'Imported expense'
-            })
-            importedCount++
+        let isPettyCashFormat = false
+
+        // Loop through all sheets in the workbook to capture all data
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName]
+          const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 })
+          
+          if (rawRows.length === 0) continue
+
+          // Detect format by looking for standard petty cash labels in first 10 rows
+          let headerIndex = -1
+          for (let idx = 0; idx < Math.min(10, rawRows.length); idx++) {
+            const r = rawRows[idx]
+            if (r && (r.includes('Particulars') || r.includes('Exepense Particulars') || r.includes('Recipeint') || r.includes('Client Name'))) {
+              headerIndex = idx
+              isPettyCashFormat = true
+              break
+            }
+          }
+
+          if (isPettyCashFormat) {
+            // Dual column Cash Book parser
+            const parseExcelDate = (val) => {
+              if (!val) return null
+              if (typeof val === 'number') {
+                const date = new Date((val - 25569) * 86400 * 1000)
+                try { return format(date, 'yyyy-MM-dd') } catch (_) { return null }
+              }
+              try {
+                const parsed = new Date(val)
+                if (!isNaN(parsed.getTime())) return format(parsed, 'yyyy-MM-dd')
+              } catch (_) {}
+              return null
+            }
+            const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+            for (let i = headerIndex + 1; i < rawRows.length; i++) {
+              const row = rawRows[i]
+              if (!row || row.length === 0) continue
+
+              // 1. Receipts (Income)
+              const rAmount = Number(row[5]) || 0
+              const rClient = String(row[1] || '').trim()
+              const rParticulars = String(row[2] || '').trim()
+              const rLowerClient = rClient.toLowerCase()
+              const rLowerPart = rParticulars.toLowerCase()
+
+              const isBalBF = rLowerClient.includes('bal') || rLowerClient.includes('b/f') || rLowerPart.includes('bal') || rLowerPart.includes('b/f')
+
+              if (rAmount > 0 && !isBalBF) {
+                await addTransaction({
+                  date: parseExcelDate(row[0]) || todayStr,
+                  type: 'Income',
+                  source: 'Petty Cash',
+                  category: 'Petty Cash Receipt',
+                  amount: rAmount,
+                  paymentMethod: String(row[6] || 'Cash'),
+                  isBanked: String(row[6] || '').toLowerCase() === 'bank',
+                  description: `${rClient} - ${rParticulars}`.replace(/^[\s\-]+|[\s\-]+$/g, '') || 'Petty cash receipt'
+                })
+                importedCount++
+              }
+
+              // 2. Payments (Expenses)
+              const pAmount = Number(row[11]) || 0
+              const pRecipient = String(row[9] || '').trim()
+              const pParticulars = String(row[10] || '').trim()
+              const pLowerRec = pRecipient.toLowerCase()
+              const pLowerPart = pParticulars.toLowerCase()
+              
+              const isPBalBF = pLowerRec.includes('bal') || pLowerRec.includes('b/f') || pLowerPart.includes('bal') || pLowerPart.includes('b/f')
+
+              if (pAmount > 0 && !isPBalBF) {
+                const pSource = String(row[12] || '').toLowerCase() === 'bank' ? 'Bank' : 'Petty Cash'
+                await addTransaction({
+                  date: parseExcelDate(row[8]) || todayStr,
+                  type: 'Expense',
+                  source: pSource,
+                  category: pParticulars || 'General Expense',
+                  amount: pAmount,
+                  paymentMethod: String(row[12] || 'Cash'),
+                  isBanked: pSource === 'Bank',
+                  description: `${pRecipient} - ${pParticulars}`.replace(/^[\s\-]+|[\s\-]+$/g, '') || 'Petty cash payment'
+                })
+                importedCount++
+              }
+            }
+          } else {
+            // Fall back to standard flat format parser
+            const flatData = XLSX.utils.sheet_to_json(ws)
+            for (const row of flatData) {
+              const amount = Number(row.Amount) || 0
+              if (amount > 0) {
+                await addTransaction({
+                  date: row.Date || format(new Date(), 'yyyy-MM-dd'),
+                  type: 'Expense',
+                  source: row['Payment Method'] === 'Bank' ? 'Bank' : 'Petty Cash',
+                  category: row.Category || 'General Expense',
+                  amount,
+                  paymentMethod: row['Payment Method'] || 'Cash',
+                  isBanked: row['Payment Method'] === 'Bank',
+                  description: row.Description || 'Imported expense'
+                })
+                importedCount++
+              }
+            }
           }
         }
         
         try { await forceUploadAllLocalData() } catch (_) {}
-        alert(`Successfully imported ${importedCount} expenses and synced to cloud!`)
+        alert(`Successfully imported ${importedCount} transactions and synced to cloud!`)
       } catch (err) {
-        console.error('Expense Import failed:', err)
-        alert('Failed to parse expense excel file. Please check the file format. Expected columns: Date, Category, Amount, Description, Payment Method')
+        console.error('Import failed:', err)
+        alert('Failed to parse excel file. Please check the file format.')
       }
       e.target.value = null
     }
@@ -343,29 +432,22 @@ export default function Sacco() {
     e.preventDefault()
     if (editingInvestor) {
       const addedAmount = Number(investorForm.addPaymentAmount) || 0
-      const currentPaid = Number(editingInvestor.investmentAmount) || 0
-      const newTotal = currentPaid + addedAmount
 
+      // Update basic settings and pairing configuration
       await updateInvestor(editingInvestor.id, {
         category: investorForm.investorType || investorForm.category,
         investorType: investorForm.investorType || investorForm.category,
         investmentPhase: investorForm.investmentPhase || 'Initial',
         marketingStrategy: investorForm.marketingStrategy || false,
-        investmentAmount: newTotal
+        pairedWith: investorForm.pairedWith || '',
+        memberId: editingInvestor.memberId
       })
 
-      // Log the transaction if money was added
+      // Use the automatic splitting record payment action if payment added
       if (addedAmount > 0) {
-        await addTransaction({
-          memberId: editingInvestor.id,
-          date: format(new Date(), 'yyyy-MM-dd'),
-          type: 'Income',
-          source: investorForm.isBanked ? 'Bank' : investorForm.paymentMethod,
-          category: 'Investment Deposit',
-          amount: addedAmount,
+        await useSaccoStore.getState().recordInvestorPayment(editingInvestor.id, addedAmount, {
           paymentMethod: investorForm.paymentMethod,
-          isBanked: investorForm.isBanked,
-          description: `Investment payment for ${editingInvestor.name}`
+          isBanked: investorForm.isBanked
         })
       }
     }
@@ -649,11 +731,18 @@ export default function Sacco() {
           ? 'bg-emerald-500' 
           : 'bg-red-500'
       return (
-        <button onClick={() => { setDetailedMemberId(row.memberId || row.id); setIsDetailsModalOpen(true); }}
-                className="flex items-center gap-2 font-semibold transition-colors text-left hover:text-slate-300">
-          <span className={`w-3 h-3 border border-black/20 ${markColor} shrink-0`}></span>
-          <span className="text-slate-200 underline underline-offset-4 decoration-slate-600">{val}</span>
-        </button>
+        <div className="space-y-1">
+          <button onClick={() => { setDetailedMemberId(row.memberId || row.id); setIsDetailsModalOpen(true); }}
+                  className="flex items-center gap-2 font-semibold transition-colors text-left hover:text-slate-300">
+            <span className={`w-3 h-3 border border-black/20 ${markColor} shrink-0`}></span>
+            <span className="text-slate-200 underline underline-offset-4 decoration-slate-600">{val}</span>
+          </button>
+          {row.pairedWith && (
+            <div className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 border border-purple-500/20 rounded inline-block">
+              Paired: {row.pairedWithName || 'Partner'} (50% Share)
+            </div>
+          )}
+        </div>
       )
     }},
     { key: 'investorType', label: 'Type', render: (val, row) => {
@@ -667,7 +756,12 @@ export default function Sacco() {
     { key: 'investmentPhase', label: 'Phase', render: (val) => <span className="text-slate-300 text-xs">{val || 'Phase 3'}</span> },
     { key: 'programAmount', label: 'Program', render: (val, row) => {
       const program = val || 8000000
-      return <span className="text-slate-300 font-medium">{formatUGX(program)}</span>
+      return (
+        <div className="text-xs">
+          <span className="text-slate-300 font-medium">{formatUGX(program)}</span>
+          {row.pairedWith && <p className="text-[9px] text-slate-500">1/2 of standard unit</p>}
+        </div>
+      )
     }},
     { key: 'investmentAmount', label: 'Paid', render: (val, row) => {
       const program = row.programAmount || 8000000
@@ -706,11 +800,12 @@ export default function Sacco() {
           marketingStrategy: row.marketingStrategy || false,
           addPaymentAmount: '',
           paymentMethod: 'Cash',
-          isBanked: false
+          isBanked: false,
+          pairedWith: row.pairedWith || ''
         })
         setIsInvestorModalOpen(true)
       }} className="btn-secondary px-2.5 py-1 text-xs text-white flex items-center gap-1">
-        <Edit2 size={12} /> Add Payment
+        <Edit2 size={12} /> Add Payment / Edit
       </button>
     )}
   ]
@@ -804,6 +899,21 @@ export default function Sacco() {
             <h1 className="page-title text-2xl font-bold text-white">SACCO Management</h1>
             <p className="text-slate-400 text-sm">Members list, share counting, savings, investor calculations, and accounts ledgers.</p>
           </div>
+        </div>
+
+        {/* Universal Print Button — visible on all tabs */}
+        <div className="flex items-center gap-2 print:hidden">
+          <button
+            onClick={() => {
+              const tabLabels = { members: 'Members', shares: 'Shares', savings: 'Savings', investors: 'Investors', accounts: 'Accounts Ledger', finance: 'Farm Finance' }
+              document.body.setAttribute('data-print-title', tabLabels[activeTab] || 'SACCO')
+              window.print()
+            }}
+            className="btn-secondary flex items-center gap-2 text-slate-300 hover:text-white border-white/10 hover:bg-white/5"
+            title="Print current view"
+          >
+            <Printer size={16} /> Print
+          </button>
         </div>
 
         {/* Seed Data loading removed */}        {activeTab === 'investors' && (
@@ -1591,6 +1701,28 @@ export default function Sacco() {
                 onChange={e => setInvestorForm({ ...investorForm, investmentPhase: e.target.value })} 
               />
             </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Pair with another Investor</label>
+              <select 
+                className="input-field" 
+                value={investorForm.pairedWith || ''} 
+                onChange={e => setInvestorForm({ ...investorForm, pairedWith: e.target.value })}
+              >
+                <option value="">-- No Pairing --</option>
+                {investorsData
+                  .filter(inv => inv.memberId !== editingInvestor?.memberId)
+                  .map(inv => (
+                    <option key={inv.memberId || inv.id} value={inv.memberId}>
+                      {inv.name} ({inv.investorType || 'Investor'})
+                    </option>
+                  ))
+                }
+              </select>
+              <p className="text-[10px] text-slate-500 mt-1">
+                If paired, both investors will automatically split payment goals (half of standard unit each) and payments will be credited 50/50.
+              </p>
+            </div>
           </div>
 
           {/* Marketing Strategy Toggle */}
@@ -1690,14 +1822,20 @@ export default function Sacco() {
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Category *</label>
-              <input 
+              <select 
                 required 
-                type="text"
                 className="input-field" 
                 value={txForm.category} 
                 onChange={e => setTxForm({ ...txForm, category: e.target.value })}
-                placeholder="e.g. Savings, Supplies, General Expense"
-              />
+              >
+                <option value="Share Purchase">Share Purchase</option>
+                <option value="Savings">Savings</option>
+                <option value="Investment Deposit">Investment Deposit</option>
+                <option value="Paired Investment">Paired Investment</option>
+                <option value="Withdrawal">Withdrawal</option>
+                <option value="General Expense">General Expense</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
 
             <div className="col-span-2">

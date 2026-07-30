@@ -6,7 +6,8 @@
  *
  * Tables handled:
  *   saccoMembers, saccoShares, saccoInvestors,
- *   saccoTransactions, saccoSavings, saccoYearlySavings
+ *   saccoTransactions, saccoSavings, saccoYearlySavings,
+ *   finances (also synced here for cross-device expense visibility)
  */
 
 import { db } from '../db/schema'
@@ -19,6 +20,7 @@ const SACCO_TABLES = [
   'saccoTransactions',
   'saccoSavings',
   'saccoYearlySavings',
+  'finances',
 ]
 
 // Supabase table names (same as Dexie table names)
@@ -29,6 +31,7 @@ const TABLE_MAP = {
   saccoTransactions:  'saccoTransactions',
   saccoSavings:       'saccoSavings',
   saccoYearlySavings: 'saccoYearlySavings',
+  finances:           'finances',
 }
 
 let realtimeChannels = []
@@ -104,6 +107,15 @@ export async function fetchAllSaccoFromSupabase() {
       const state = useSaccoStore.getState()
       if (typeof state.loadSaccoData === 'function') {
         await state.loadSaccoData()
+      }
+    } catch (_) {}
+
+    // Also reload Finance store so Finance page reflects pulled data
+    try {
+      const { useFinanceStore } = await import('../store/useFinanceStore')
+      const fState = useFinanceStore.getState()
+      if (typeof fState.loadTransactions === 'function') {
+        await fState.loadTransactions()
       }
     } catch (_) {}
 
@@ -237,11 +249,20 @@ export function initSupabaseSaccoSync() {
               await db[dexieTable].delete(payload.old.id)
             }
 
-            // Reload Sacco UI
-            const { useSaccoStore } = await import('../store/useSaccoStore')
-            const state = useSaccoStore.getState()
-            if (typeof state.loadSaccoData === 'function') {
-              await state.loadSaccoData()
+            if (dexieTable === 'finances') {
+              // Reload Finance store for finance table changes
+              try {
+                const { useFinanceStore } = await import('../store/useFinanceStore')
+                const fState = useFinanceStore.getState()
+                if (typeof fState.loadTransactions === 'function') await fState.loadTransactions()
+              } catch (_) {}
+            } else {
+              // Reload Sacco UI
+              const { useSaccoStore } = await import('../store/useSaccoStore')
+              const state = useSaccoStore.getState()
+              if (typeof state.loadSaccoData === 'function') {
+                await state.loadSaccoData()
+              }
             }
           } catch (e) {
             console.warn(`Realtime error on ${sbTable}:`, e)

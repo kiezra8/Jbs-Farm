@@ -487,8 +487,173 @@ export const useSaccoStore = create((set, get) => ({
   },
 
   updateInvestor: async (id, data) => {
-    await db.saccoInvestors.update(id, data)
+    const currentInv = await db.saccoInvestors.get(id)
+    if (!currentInv) {
+      // If it doesn't exist, create it (handles cases where a new investor is created)
+      const now = new Date().toISOString()
+      const newRecord = { id, createdAt: now, ...data }
+      if (data.pairedWith) {
+        newRecord.programAmount = 4000000
+        const partnerMember = await db.saccoMembers.get(data.pairedWith)
+        newRecord.pairedWithName = partnerMember ? partnerMember.name : ''
+      }
+      await db.saccoInvestors.add(newRecord)
+      
+      // Handle setting pairing on partner too
+      if (data.pairedWith) {
+        const partnerInv = await db.saccoInvestors.where('memberId').equals(data.pairedWith).first()
+        if (partnerInv) {
+          const thisMember = await db.saccoMembers.get(data.memberId)
+          await db.saccoInvestors.update(partnerInv.id, {
+            pairedWith: data.memberId,
+            pairedWithName: thisMember ? thisMember.name : '',
+            programAmount: 4000000
+          })
+        }
+      }
+      await get().loadSaccoData()
+      return
+    }
+
+    const oldPairedWith = currentInv.pairedWith
+    const newPairedWith = data.pairedWith // memberId of partner
+    const updatedData = { ...data }
+
+    if (newPairedWith) {
+      updatedData.programAmount = 4000000
+      const partnerMember = await db.saccoMembers.get(newPairedWith)
+      updatedData.pairedWithName = partnerMember ? partnerMember.name : ''
+    } else {
+      updatedData.pairedWithName = ''
+      updatedData.pairedWith = ''
+      if (currentInv.programAmount === 4000000) {
+        updatedData.programAmount = 8000000
+      }
+    }
+
+    await db.saccoInvestors.update(id, updatedData)
+
+    // Handle partner's record configuration
+    if (newPairedWith && newPairedWith !== oldPairedWith) {
+      // Unpair old partner
+      if (oldPairedWith) {
+        const oldPartner = await db.saccoInvestors.where('memberId').equals(oldPairedWith).first()
+        if (oldPartner) {
+          await db.saccoInvestors.update(oldPartner.id, {
+            pairedWith: '',
+            pairedWithName: '',
+            programAmount: 8000000
+          })
+        }
+      }
+
+      // Pair new partner
+      const newPartner = await db.saccoInvestors.where('memberId').equals(newPairedWith).first()
+      if (newPartner) {
+        const thisMember = await db.saccoMembers.get(currentInv.memberId)
+        await db.saccoInvestors.update(newPartner.id, {
+          pairedWith: currentInv.memberId,
+          pairedWithName: thisMember ? thisMember.name : '',
+          programAmount: 4000000
+        })
+      }
+    } else if (!newPairedWith && oldPairedWith) {
+      // Unpair old partner
+      const oldPartner = await db.saccoInvestors.where('memberId').equals(oldPairedWith).first()
+      if (oldPartner) {
+        await db.saccoInvestors.update(oldPartner.id, {
+          pairedWith: '',
+          pairedWithName: '',
+          programAmount: 8000000
+        })
+      }
+    }
+
     await get().loadSaccoData()
+  },
+
+  recordInvestorPayment: async (investorId, amountToAdd, details) => {
+    const { members, investors } = get()
+    const currentInv = investors.find(i => i.id === investorId)
+    if (!currentInv) return { success: false, error: 'Investor not found' }
+
+    const isPaired = currentInv.pairedWith
+    const addedAmount = Number(amountToAdd) || 0
+    if (addedAmount <= 0) return { success: true }
+
+    const now = new Date().toISOString()
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+    if (isPaired) {
+      const halfAmount = addedAmount / 2
+      const partnerInv = investors.find(i => i.memberId === currentInv.pairedWith)
+
+      // Update current investor
+      const newPaidA = (Number(currentInv.investmentAmount) || 0) + halfAmount
+      await db.saccoInvestors.update(currentInv.id, {
+        investmentAmount: newPaidA,
+        status: newPaidA >= (currentInv.programAmount || 4000000) ? 'CLEARED' : 'PENDING'
+      })
+
+      // Add transaction for current investor
+      await db.saccoTransactions.add({
+        id: crypto.randomUUID(),
+        memberId: currentInv.memberId,
+        date: todayStr,
+        type: 'Income',
+        source: details.isBanked ? 'Bank' : details.paymentMethod,
+        category: 'Paired Investment',
+        amount: halfAmount,
+        paymentMethod: details.paymentMethod,
+        isBanked: details.isBanked,
+        description: `Paired Investment: 50% Share of ${formatUGX(addedAmount)} unit payment (Paired with ${currentInv.pairedWithName || 'Partner'})`
+      })
+
+      // Update partner investor
+      if (partnerInv) {
+        const newPaidB = (Number(partnerInv.investmentAmount) || 0) + halfAmount
+        await db.saccoInvestors.update(partnerInv.id, {
+          investmentAmount: newPaidB,
+          status: newPaidB >= (partnerInv.programAmount || 4000000) ? 'CLEARED' : 'PENDING'
+        })
+
+        // Add transaction for partner investor
+        await db.saccoTransactions.add({
+          id: crypto.randomUUID(),
+          memberId: partnerInv.memberId,
+          date: todayStr,
+          type: 'Income',
+          source: details.isBanked ? 'Bank' : details.paymentMethod,
+          category: 'Paired Investment',
+          amount: halfAmount,
+          paymentMethod: details.paymentMethod,
+          isBanked: details.isBanked,
+          description: `Paired Investment: 50% Share of ${formatUGX(addedAmount)} unit payment (Paid by ${currentInv.name || 'Partner'})`
+        })
+      }
+    } else {
+      const newPaid = (Number(currentInv.investmentAmount) || 0) + addedAmount
+      await db.saccoInvestors.update(currentInv.id, {
+        investmentAmount: newPaid,
+        status: newPaid >= (currentInv.programAmount || 8000000) ? 'CLEARED' : 'PENDING'
+      })
+
+      await db.saccoTransactions.add({
+        id: crypto.randomUUID(),
+        memberId: currentInv.memberId,
+        date: todayStr,
+        type: 'Income',
+        source: details.isBanked ? 'Bank' : details.paymentMethod,
+        category: 'Investment Deposit',
+        amount: addedAmount,
+        paymentMethod: details.paymentMethod,
+        isBanked: details.isBanked,
+        description: `Investment payment for ${currentInv.name}`
+      })
+    }
+
+    await get().loadSaccoData()
+    return { success: true }
   },
 
   addTransaction: async (tx) => {

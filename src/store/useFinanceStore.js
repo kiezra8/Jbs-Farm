@@ -2,6 +2,21 @@ import { create } from 'zustand'
 import { db } from '../db/schema'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 
+// Push a finance record to Supabase (fire-and-forget, non-blocking)
+async function pushFinanceToSupabase(record) {
+  try {
+    const { upsertSaccoRecord } = await import('../services/supabaseSyncEngine')
+    await upsertSaccoRecord('finances', record)
+  } catch (_) {}
+}
+
+async function deleteFinanceFromSupabase(id) {
+  try {
+    const { deleteSaccoRecord } = await import('../services/supabaseSyncEngine')
+    await deleteSaccoRecord('finances', id)
+  } catch (_) {}
+}
+
 export const useFinanceStore = create((set, get) => ({
   transactions: [],
   loading: false,
@@ -15,9 +30,12 @@ export const useFinanceStore = create((set, get) => ({
   addTransaction: async (data) => {
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
-    await db.finances.add({ ...data, id, createdAt: now })
+    const record = { ...data, id, createdAt: now }
+    await db.finances.add(record)
     const tx = await db.finances.get(id)
     set(s => ({ transactions: [tx, ...s.transactions] }))
+    // Sync to Supabase for cross-device visibility
+    pushFinanceToSupabase(tx)
     return tx
   },
 
@@ -25,11 +43,15 @@ export const useFinanceStore = create((set, get) => ({
     await db.finances.update(id, { ...data, updatedAt: new Date().toISOString() })
     const tx = await db.finances.get(id)
     set(s => ({ transactions: s.transactions.map(t => t.id === id ? tx : t) }))
+    // Sync to Supabase
+    pushFinanceToSupabase(tx)
   },
 
   deleteTransaction: async (id) => {
     await db.finances.delete(id)
     set(s => ({ transactions: s.transactions.filter(t => t.id !== id) }))
+    // Sync delete to Supabase
+    deleteFinanceFromSupabase(id)
   },
 
   getMonthlyStats: (date = new Date()) => {

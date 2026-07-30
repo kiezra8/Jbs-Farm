@@ -28,7 +28,8 @@ export default function DataTable({ columns, data, pageSize = 10, emptyMessage =
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="overflow-x-auto">
+      {/* ── Screen view: paginated ── */}
+      <div className="overflow-x-auto print:hidden">
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
@@ -77,9 +78,43 @@ export default function DataTable({ columns, data, pageSize = 10, emptyMessage =
         </table>
       </div>
 
-      {/* Pagination */}
+      {/* ── Print view: all rows, no pagination ── */}
+      <div className="hidden print:block">
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              {columns.map(col => (
+                <th key={col.key || col.label}
+                  className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider"
+                >
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="text-center py-4">
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : sorted.map((row, i) => (
+              <tr key={row.id ?? i}>
+                {columns.map(col => (
+                  <td key={col.key || col.label} className="px-4 py-2">
+                    {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '—')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination — hidden on print */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-t print:hidden" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
           <span className="text-xs text-slate-500">
             {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, sorted.length)} of {sorted.length}
           </span>
@@ -109,3 +144,4 @@ export default function DataTable({ columns, data, pageSize = 10, emptyMessage =
     </div>
   )
 }
+
