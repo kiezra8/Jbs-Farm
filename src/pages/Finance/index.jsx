@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
-import { Plus, Edit2, Trash2, Printer, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X } from 'lucide-react'
+import { useEffect, useState, useRef, useMemo } from 'react'
+import { Plus, Edit2, Trash2, Printer, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useFinanceStore } from '../../store/useFinanceStore'
+import { useMilkStore } from '../../store/useMilkStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
@@ -10,8 +11,15 @@ import { formatUGX } from '../../utils/formatters'
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 
+/* ──────────────────────── Monthly Revenue Panel ──────────────────────── */
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+const MILK_PRICE_PER_LITRE = 1500
+
 export default function Finance() {
   const { transactions, loadTransactions, getMonthlyStats, getDailyStats, addTransaction, updateTransaction, deleteTransaction } = useFinanceStore()
+  const { records: milkRecords, loadRecords: loadMilkRecords } = useMilkStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
   const [selectedTransaction, setSelectedTransaction] = useState(null)
@@ -22,11 +30,17 @@ export default function Finance() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
+  // Monthly Revenue Panel state
+  const currentYear = new Date().getFullYear()
+  const [selectedYear, setSelectedYear] = useState(currentYear)
+  const [selectedMonthIdx, setSelectedMonthIdx] = useState(new Date().getMonth()) // 0-based
+  const [milkPricePerLitre, setMilkPricePerLitre] = useState(1500)
+
   const initialForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', source: 'Bank', category: 'Feed', amount: '', description: '', reference: '' }
   const [formData, setFormData] = useState(initialForm)
   const excelInputRef = useRef(null)
 
-  useEffect(() => { loadTransactions() }, [])
+  useEffect(() => { loadTransactions(); loadMilkRecords() }, [])
 
   /* ──────────────────────── Excel Import ──────────────────────── */
   const handleExpenseExcelImport = (e) => {
@@ -141,6 +155,65 @@ export default function Finance() {
   }
 
   const hasActiveFilters = filterType !== 'All' || filterSource !== 'All' || filterCategory !== 'All' || dateFrom || dateTo
+
+  /* ──────────────────────── Monthly Revenue Computation ──────────────────────── */
+  const allMonthlyData = useMemo(() => {
+    // Build stats for every month in the selected year
+    return Array.from({ length: 12 }, (_, mIdx) => {
+      const prefix = `${selectedYear}-${String(mIdx + 1).padStart(2, '0')}`
+
+      // Finance transactions for this month
+      const monthTxs = transactions.filter(t => t.date && t.date.startsWith(prefix))
+      const income = monthTxs.filter(t => t.type === 'Income').reduce((s, t) => s + (t.amount || 0), 0)
+      const expenses = monthTxs.filter(t => t.type === 'Expense').reduce((s, t) => s + (t.amount || 0), 0)
+
+      // Category breakdown for the month
+      const catMap = {}
+      monthTxs.forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + (t.amount || 0) })
+      const categories = Object.entries(catMap)
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((a, b) => b.amount - a.amount)
+
+      // Milk records for this month
+      const monthMilk = milkRecords.filter(r => r.date && r.date.startsWith(prefix))
+      const milkLitres = monthMilk.reduce((s, r) => s + (r.amount || 0), 0)
+      const calvesLitres = monthMilk.reduce((s, r) => s + (r.calvesAmount || 0), 0)
+      const netMilkLitres = Math.max(0, milkLitres - calvesLitres)
+      const milkRevenue = netMilkLitres * milkPricePerLitre
+      const milkSessions = monthMilk.length
+
+      return {
+        monthIdx: mIdx,
+        label: SHORT_MONTHS[mIdx],
+        fullLabel: MONTH_NAMES[mIdx],
+        income,
+        expenses,
+        profit: income + milkRevenue - expenses,
+        txCount: monthTxs.length,
+        categories,
+        // Milk
+        milkLitres,
+        calvesLitres,
+        netMilkLitres,
+        milkRevenue,
+        milkSessions,
+        hasData: monthTxs.length > 0 || monthMilk.length > 0
+      }
+    })
+  }, [transactions, milkRecords, selectedYear, milkPricePerLitre])
+
+  const selectedMonthData = allMonthlyData[selectedMonthIdx]
+  const maxBarValue = Math.max(...allMonthlyData.map(m => Math.max(m.income, m.expenses, m.milkRevenue)), 1)
+
+  // Available years from transaction + milk data
+  const availableYears = useMemo(() => {
+    const years = new Set([
+      ...transactions.map(t => t.date?.slice(0, 4)),
+      ...milkRecords.map(r => r.date?.slice(0, 4))
+    ].filter(Boolean))
+    years.add(String(currentYear))
+    return [...years].map(Number).sort((a, b) => b - a)
+  }, [transactions, milkRecords, currentYear])
 
   /* ──────────────────────── Stats ──────────────────────── */
   const monthStats = getMonthlyStats()
@@ -541,6 +614,248 @@ export default function Finance() {
               <div className="p-2 rounded-xl bg-blue-500/15">
                 <BarChart3 size={16} className="text-blue-400" />
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Monthly Revenue Panel ── */}
+        <div className="glass-card overflow-hidden">
+          {/* Panel header: title + milk price input + year picker */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+            <div className="flex items-center gap-2">
+              <Calendar size={15} className="text-emerald-400" />
+              <h3 className="font-display font-semibold text-white text-sm">Monthly Revenue Overview</h3>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Milk price per litre input */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500 whitespace-nowrap">🥛 Price / Litre</span>
+                <div className="flex items-center rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(6,182,212,0.35)', background: 'rgba(6,182,212,0.08)' }}>
+                  <span className="px-2 text-[10px] text-cyan-400 font-medium border-r" style={{ borderColor: 'rgba(6,182,212,0.25)' }}>Ushs</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="50"
+                    value={milkPricePerLitre}
+                    onChange={e => setMilkPricePerLitre(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-20 bg-transparent text-xs font-bold text-cyan-300 px-2 py-1.5 outline-none text-right"
+                    title="Milk price per litre — change this to update all milk revenue calculations"
+                  />
+                  <span className="px-2 text-[10px] text-slate-500">/L</span>
+                </div>
+              </div>
+              {/* Year selector */}
+              <div className="flex items-center gap-1">
+              <button
+                onClick={() => setSelectedYear(y => y - 1)}
+                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <select
+                value={selectedYear}
+                onChange={e => setSelectedYear(Number(e.target.value))}
+                className="text-xs font-semibold rounded-lg px-3 py-1.5 border outline-none"
+                style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#f8fafc' }}
+              >
+                {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <button
+                onClick={() => setSelectedYear(y => y + 1)}
+                disabled={selectedYear >= currentYear}
+                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors disabled:opacity-30"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+
+          {/* Month pill tabs */}
+          <div className="flex items-stretch gap-1 px-4 pt-4 pb-1 overflow-x-auto scrollbar-thin">
+            {allMonthlyData.map(m => (
+              <button
+                key={m.monthIdx}
+                onClick={() => setSelectedMonthIdx(m.monthIdx)}
+                className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 min-w-[56px]
+                  ${selectedMonthIdx === m.monthIdx
+                    ? 'bg-emerald-500/25 border border-emerald-500/50 text-emerald-300'
+                    : m.hasData
+                      ? 'bg-white/05 border border-white/08 text-slate-300 hover:bg-white/10'
+                      : 'bg-transparent border border-dashed border-white/08 text-slate-600 cursor-default'}`}
+              >
+                <span className="font-semibold">{m.label}</span>
+                {m.hasData ? (
+                  <span className={`text-[10px] ${m.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {m.profit >= 0 ? '+' : ''}{m.profit >= 1e6 ? (m.profit / 1e6).toFixed(1) + 'M' : m.profit >= 1e3 ? (m.profit / 1e3).toFixed(0) + 'K' : m.profit}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-700">—</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Visual bar chart + selected month detail */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 divide-y lg:divide-y-0 lg:divide-x" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+
+            {/* Bar chart — all 12 months */}
+            <div className="col-span-2 px-5 py-4">
+              <p className="text-xs text-slate-500 mb-3 uppercase tracking-wider">Revenue vs Expenses — {selectedYear}</p>
+              <div className="flex items-end gap-1.5 h-28">
+                {allMonthlyData.map(m => {
+                  const incH = m.income > 0 ? Math.max(4, (m.income / maxBarValue) * 96) : 0
+                  const expH = m.expenses > 0 ? Math.max(4, (m.expenses / maxBarValue) * 96) : 0
+                  const milkH = m.milkRevenue > 0 ? Math.max(4, (m.milkRevenue / maxBarValue) * 96) : 0
+                  const isSelected = m.monthIdx === selectedMonthIdx
+                  return (
+                    <button
+                      key={m.monthIdx}
+                      onClick={() => setSelectedMonthIdx(m.monthIdx)}
+                      className="flex-1 flex flex-col items-center gap-0.5 group cursor-pointer"
+                      title={`${m.fullLabel}\nIncome: ${formatUGX(m.income)}\nMilk: ${formatUGX(m.milkRevenue)} (${m.netMilkLitres.toFixed(1)}L)\nExpenses: ${formatUGX(m.expenses)}`}
+                    >
+                      <div className="w-full flex items-end justify-center gap-px" style={{ height: 96 }}>
+                        {/* Finance Income bar */}
+                        <div
+                          style={{ height: incH, minHeight: m.income > 0 ? 4 : 0 }}
+                          className={`w-[30%] rounded-t transition-all duration-300 ${
+                            isSelected ? 'bg-emerald-400' : m.hasData ? 'bg-emerald-500/50 group-hover:bg-emerald-500/80' : 'bg-white/05'
+                          }`}
+                        />
+                        {/* Milk Revenue bar */}
+                        <div
+                          style={{ height: milkH, minHeight: m.milkRevenue > 0 ? 4 : 0 }}
+                          className={`w-[30%] rounded-t transition-all duration-300 ${
+                            isSelected ? 'bg-cyan-400' : m.milkRevenue > 0 ? 'bg-cyan-500/50 group-hover:bg-cyan-500/80' : 'bg-white/05'
+                          }`}
+                        />
+                        {/* Expense bar */}
+                        <div
+                          style={{ height: expH, minHeight: m.expenses > 0 ? 4 : 0 }}
+                          className={`w-[30%] rounded-t transition-all duration-300 ${
+                            isSelected ? 'bg-red-400' : m.hasData ? 'bg-red-500/50 group-hover:bg-red-500/80' : 'bg-white/05'
+                          }`}
+                        />
+                      </div>
+                      <span className={`text-[9px] font-medium ${
+                        isSelected ? 'text-emerald-300' : m.hasData ? 'text-slate-400' : 'text-slate-700'
+                      }`}>{m.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Legend */}
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-2 rounded-sm bg-emerald-500/70" />
+                  <span className="text-[10px] text-slate-500">Finance Income</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-2 rounded-sm bg-cyan-500/70" />
+                  <span className="text-[10px] text-slate-500">Milk Income</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-2 rounded-sm bg-red-500/70" />
+                  <span className="text-[10px] text-slate-500">Expenses</span>
+                </div>
+                <span className="text-[10px] text-slate-600 ml-auto">Click a bar to view details</span>
+              </div>
+            </div>
+
+            {/* Selected month detail */}
+            <div className="px-5 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-white">{selectedMonthData.fullLabel} {selectedYear}</p>
+                <span className="text-[10px] text-slate-500">{selectedMonthData.txCount} tx · {selectedMonthData.milkSessions} milk sessions</span>
+              </div>
+
+              {selectedMonthData.hasData ? (
+                <>
+                  {/* Income / Milk / Expenses / Net */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Finance Income</span>
+                      <span className="text-xs font-bold text-green-400">{formatUGX(selectedMonthData.income)}</span>
+                    </div>
+                    {/* Milk income row */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-cyan-400 flex items-center gap-1">
+                        🥛 Milk Income
+                      </span>
+                      <span className="text-xs font-bold text-cyan-400">{formatUGX(selectedMonthData.milkRevenue)}</span>
+                    </div>
+                    {selectedMonthData.netMilkLitres > 0 && (
+                      <div className="flex items-center justify-between pl-3">
+                        <span className="text-[10px] text-slate-600">{selectedMonthData.netMilkLitres.toFixed(1)} L net · {selectedMonthData.calvesLitres.toFixed(1)} L calves</span>
+                        <span className="text-[10px] text-slate-600">{selectedMonthData.milkLitres.toFixed(1)} L total</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Expenses</span>
+                      <span className="text-xs font-bold text-red-400">-{formatUGX(selectedMonthData.expenses)}</span>
+                    </div>
+                    <div className="h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-white">Net Profit</span>
+                      <span className={`text-sm font-bold ${
+                        selectedMonthData.profit >= 0 ? 'text-emerald-400' : 'text-red-400'
+                      }`}>
+                        {selectedMonthData.profit >= 0 ? '+' : ''}{formatUGX(selectedMonthData.profit)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Category breakdown */}
+                  {selectedMonthData.categories.length > 0 && (
+                    <>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-600 mb-2">By Category</p>
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                        {selectedMonthData.categories.slice(0, 8).map(cat => {
+                          const total = selectedMonthData.income + selectedMonthData.expenses
+                          const pct = total > 0 ? Math.round((cat.amount / total) * 100) : 0
+                          return (
+                            <div key={cat.name}>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className="text-[10px] text-slate-400 truncate max-w-[110px]" title={cat.name}>{cat.name}</span>
+                                <span className="text-[10px] text-slate-300 font-medium">{formatUGX(cat.amount)}</span>
+                              </div>
+                              <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-blue-500 transition-all duration-500"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Quick filter button */}
+                  <button
+                    onClick={() => {
+                      const y = String(selectedYear)
+                      const m = String(selectedMonthIdx + 1).padStart(2, '0')
+                      const daysInMonth = new Date(selectedYear, selectedMonthIdx + 1, 0).getDate()
+                      setDateFrom(`${y}-${m}-01`)
+                      setDateTo(`${y}-${m}-${daysInMonth}`)
+                      setFilterType('All')
+                      setFilterSource('All')
+                      setFilterCategory('All')
+                    }}
+                    className="mt-3 w-full text-[11px] py-1.5 rounded-lg font-medium transition-all hover:opacity-90"
+                    style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.25)', color: '#6ee7b7' }}
+                  >
+                    View {selectedMonthData.label} Transactions
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-32 text-slate-600">
+                  <span className="text-2xl mb-1">📋</span>
+                  <span className="text-xs">No transactions or milk records in {selectedMonthData.fullLabel}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
