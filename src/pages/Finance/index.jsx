@@ -18,7 +18,7 @@ const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 const MILK_PRICE_PER_LITRE = 1500
 
 export default function Finance() {
-  const { transactions, loadTransactions, getMonthlyStats, getDailyStats, addTransaction, updateTransaction, deleteTransaction } = useFinanceStore()
+  const { transactions, loadTransactions, getMonthlyStats, getDailyStats, addTransaction, updateTransaction, deleteTransaction, clearAllTransactions } = useFinanceStore()
   const { records: milkRecords, loadRecords: loadMilkRecords } = useMilkStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
@@ -607,6 +607,18 @@ export default function Finance() {
             </button>
             <button className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3" onClick={() => setIsModalOpen(true)}>
               <Plus size={14} /> Add Transaction
+            </button>
+            <button
+              className="text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-xl font-medium border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+              onClick={async () => {
+                if (window.confirm('⚠️ This will permanently delete ALL petty cash transactions from all devices. You can then re-import your Excel file fresh.\n\nAre you sure?')) {
+                  await clearAllTransactions()
+                  alert('✅ All transactions cleared. You can now re-import your Excel file.')
+                }
+              }}
+              title="Delete all transactions and re-import"
+            >
+              <Trash2 size={14} /> Clear All
             </button>
           </div>
         </div>

@@ -29,6 +29,8 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
   const [investorData, setInvestorData] = useState({ category: 'Money Maker', investorType: 'Money Maker', investmentPhase: 'Initial', marketingStrategy: false })
   const [investorUnits, setInvestorUnits] = useState('1') // 1 unit = 8M
   const [investorPaid, setInvestorPaid] = useState(0)
+  const [editingPaid, setEditingPaid] = useState(false)
+  const [editPaidValue, setEditPaidValue] = useState('')
   
   // Add payment states (used for both Savings and Investor in their respective tabs)
   const [paymentMethod, setPaymentMethod] = useState('Cash')
@@ -421,7 +423,34 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                 </div>
                 <div>
                   <p className="text-xs text-emerald-400 mb-1">Total Paid</p>
-                  <p className="text-xl font-bold text-white">{formatUGX(investorPaid)}</p>
+                  {editingPaid ? (
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="number" min="0"
+                        className="input-field text-sm font-bold w-32"
+                        value={editPaidValue}
+                        onChange={e => setEditPaidValue(e.target.value)}
+                        autoFocus
+                      />
+                      <button type="button" className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold" onClick={async () => {
+                        const newAmt = Number(editPaidValue) || 0
+                        const invId = memberInvestor?.id
+                        if (invId) {
+                          await updateInvestor(invId, { ...memberInvestor, investmentAmount: newAmt, memberId: member.id })
+                          setInvestorPaid(newAmt)
+                        }
+                        setEditingPaid(false)
+                      }}>Save</button>
+                      <button type="button" className="text-xs text-slate-400 hover:text-slate-300" onClick={() => setEditingPaid(false)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="text-xl font-bold text-white">{formatUGX(investorPaid)}</p>
+                      <button type="button" title="Edit paid amount" className="text-slate-500 hover:text-emerald-400 transition-colors" onClick={() => { setEditPaidValue(String(investorPaid)); setEditingPaid(true) }}>
+                        <Edit2 size={13} />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-slate-400 mb-1">Remaining Balance</p>

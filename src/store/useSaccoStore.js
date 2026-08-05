@@ -2,6 +2,21 @@ import { create } from 'zustand'
 import { db } from '../db/schema'
 import { format } from 'date-fns'
 
+// Push Sacco records to Supabase for instant cross-device sync and cloud persistence
+async function pushRecordToSupabase(table, record) {
+  try {
+    const { upsertSaccoRecord } = await import('../services/supabaseSyncEngine')
+    await upsertSaccoRecord(table, record)
+  } catch (_) {}
+}
+
+async function removeRecordFromSupabase(table, id) {
+  try {
+    const { deleteSaccoRecord } = await import('../services/supabaseSyncEngine')
+    await deleteSaccoRecord(table, id)
+  } catch (_) {}
+}
+
 const cleanName = (name) => {
   if (!name) return '';
   let n = name;
@@ -354,6 +369,8 @@ export const useSaccoStore = create((set, get) => ({
 
     const updatedData = { ...data, category: categoryArray }
     await db.saccoMembers.update(id, updatedData)
+    const freshMem = await db.saccoMembers.get(id)
+    if (freshMem) pushRecordToSupabase('saccoMembers', freshMem)
     
     // Update or create yearly data
     const existingYearly = await db.saccoYearlySavings.where({ memberId: id }).toArray()
@@ -383,7 +400,7 @@ export const useSaccoStore = create((set, get) => ({
     
     if (categoryArray.includes('Investor') && !existingInv) {
       const invId = crypto.randomUUID()
-      await db.saccoInvestors.add({
+      const newInvRecord = {
         id: invId,
         memberId: id,
         category: 'Money Maker',
@@ -397,9 +414,12 @@ export const useSaccoStore = create((set, get) => ({
         moneyMakerAmount: 350000,
         cowsPerYear: 0,
         createdAt: new Date().toISOString()
-      })
+      }
+      await db.saccoInvestors.add(newInvRecord)
+      pushRecordToSupabase('saccoInvestors', newInvRecord)
     } else if (!categoryArray.includes('Investor') && existingInv) {
       await db.saccoInvestors.delete(existingInv.id)
+      removeRecordFromSupabase('saccoInvestors', existingInv.id)
     }
 
     await get().loadSaccoData()
@@ -530,6 +550,7 @@ export const useSaccoStore = create((set, get) => ({
       newRecord.status = isClr ? 'CLEARED' : 'PENDING'
 
       await db.saccoInvestors.add(newRecord)
+      pushRecordToSupabase('saccoInvestors', newRecord)
       
       // Handle setting pairing on partner too
       if (data.pairedWith) {
@@ -546,6 +567,8 @@ export const useSaccoStore = create((set, get) => ({
             balance: pPartnerCleared ? 0 : Math.max(0, pPartnerTarget - pPartnerPaid),
             status: pPartnerCleared ? 'CLEARED' : 'PENDING'
           })
+          const freshPartner = await db.saccoInvestors.get(partnerInv.id)
+          if (freshPartner) pushRecordToSupabase('saccoInvestors', freshPartner)
         }
       }
       await get().loadSaccoData()
@@ -577,6 +600,8 @@ export const useSaccoStore = create((set, get) => ({
     updatedData.status = isClr ? 'CLEARED' : 'PENDING'
 
     await db.saccoInvestors.update(id, updatedData)
+    const freshInv = await db.saccoInvestors.get(id)
+    if (freshInv) pushRecordToSupabase('saccoInvestors', freshInv)
 
     // Synchronize member record's category so investor category changes persist permanently
     const targetMemberId = updatedData.memberId || currentInv.memberId
@@ -587,6 +612,8 @@ export const useSaccoStore = create((set, get) => ({
         memberCats = memberCats.filter(c => !['Money Maker', 'New Farmer', 'Investor', 'Phase 3'].includes(c))
         memberCats.push(validInvestorType)
         await db.saccoMembers.update(targetMemberId, { category: memberCats })
+        const freshMember = await db.saccoMembers.get(targetMemberId)
+        if (freshMember) pushRecordToSupabase('saccoMembers', freshMember)
       }
     }
 
@@ -669,9 +696,11 @@ export const useSaccoStore = create((set, get) => ({
         balance: isClearedA ? 0 : Math.max(0, targetA - newPaidA),
         status: isClearedA ? 'CLEARED' : 'PENDING'
       })
+      const freshInvA = await db.saccoInvestors.get(currentInv.id)
+      if (freshInvA) pushRecordToSupabase('saccoInvestors', freshInvA)
 
       // Add transaction for current investor separately under memberId
-      await db.saccoTransactions.add({
+      const txA = {
         id: crypto.randomUUID(),
         memberId: currentInv.memberId,
         date: todayStr,
@@ -682,7 +711,9 @@ export const useSaccoStore = create((set, get) => ({
         paymentMethod: details.paymentMethod,
         isBanked: details.isBanked,
         description: `Paired Investment: 50% Share of ${formatUGX(addedAmount)} unit payment (Paired with ${currentInv.pairedWithName || 'Partner'})`
-      })
+      }
+      await db.saccoTransactions.add(txA)
+      pushRecordToSupabase('saccoTransactions', txA)
 
       // Update partner investor
       if (partnerInv) {
@@ -694,9 +725,11 @@ export const useSaccoStore = create((set, get) => ({
           balance: isClearedB ? 0 : Math.max(0, targetB - newPaidB),
           status: isClearedB ? 'CLEARED' : 'PENDING'
         })
+        const freshInvB = await db.saccoInvestors.get(partnerInv.id)
+        if (freshInvB) pushRecordToSupabase('saccoInvestors', freshInvB)
 
         // Add transaction for partner investor separately under partner's memberId
-        await db.saccoTransactions.add({
+        const txB = {
           id: crypto.randomUUID(),
           memberId: partnerInv.memberId,
           date: todayStr,
@@ -707,7 +740,9 @@ export const useSaccoStore = create((set, get) => ({
           paymentMethod: details.paymentMethod,
           isBanked: details.isBanked,
           description: `Paired Investment: 50% Share of ${formatUGX(addedAmount)} unit payment (Paid by ${currentInv.name || 'Partner'})`
-        })
+        }
+        await db.saccoTransactions.add(txB)
+        pushRecordToSupabase('saccoTransactions', txB)
       }
     } else {
       const target = currentInv.programAmount || 8000000
@@ -718,8 +753,10 @@ export const useSaccoStore = create((set, get) => ({
         balance: isCleared ? 0 : Math.max(0, target - newPaid),
         status: isCleared ? 'CLEARED' : 'PENDING'
       })
+      const freshInv = await db.saccoInvestors.get(currentInv.id)
+      if (freshInv) pushRecordToSupabase('saccoInvestors', freshInv)
 
-      await db.saccoTransactions.add({
+      const tx = {
         id: crypto.randomUUID(),
         memberId: currentInv.memberId,
         date: todayStr,
@@ -730,7 +767,9 @@ export const useSaccoStore = create((set, get) => ({
         paymentMethod: details.paymentMethod,
         isBanked: details.isBanked,
         description: `Investment payment for ${currentInv.name}`
-      })
+      }
+      await db.saccoTransactions.add(tx)
+      pushRecordToSupabase('saccoTransactions', tx)
     }
 
     await get().loadSaccoData()
@@ -746,12 +785,14 @@ export const useSaccoStore = create((set, get) => ({
       createdAt: new Date().toISOString()
     }
     await db.saccoTransactions.add(record)
+    pushRecordToSupabase('saccoTransactions', record)
     await get().loadSaccoData()
     return record
   },
 
   deleteTransaction: async (id) => {
     await db.saccoTransactions.delete(id)
+    removeRecordFromSupabase('saccoTransactions', id)
     await get().loadSaccoData()
   },
 
