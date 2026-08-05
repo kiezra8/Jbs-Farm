@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { Plus, Edit2, Trash2, Printer, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { Plus, Edit2, Trash2, Printer, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar, CloudUpload } from 'lucide-react'
 import { useFinanceStore } from '../../store/useFinanceStore'
 import { useMilkStore } from '../../store/useMilkStore'
 import DataTable from '../../components/ui/DataTable'
@@ -53,11 +53,35 @@ export default function Finance() {
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(new Date().getMonth()) // 0-based
   const [milkPricePerLitre, setMilkPricePerLitre] = useState(1500)
 
+  const [isSyncing, setIsSyncing] = useState(false)
+
   const initialForm = { date: format(new Date(), 'yyyy-MM-dd'), type: 'Expense', source: 'Bank', category: 'Feed', amount: '', description: '', reference: '' }
   const [formData, setFormData] = useState(initialForm)
   const excelInputRef = useRef(null)
 
-  useEffect(() => { loadTransactions(); loadMilkRecords() }, [])
+  useEffect(() => {
+    loadTransactions()
+    loadMilkRecords()
+    // Force pull from Supabase on mount so page is always up-to-date
+    if (navigator.onLine) {
+      import('../../services/supabaseSyncEngine')
+        .then(({ fetchAllSaccoFromSupabase }) => fetchAllSaccoFromSupabase())
+        .catch(() => {})
+    }
+  }, [])
+
+  const handleSyncToCloud = async () => {
+    setIsSyncing(true)
+    try {
+      const { forceUploadSaccoToSupabase } = await import('../../services/supabaseSyncEngine')
+      const count = await forceUploadSaccoToSupabase()
+      alert(`✅ Synced ${count} records to cloud. All devices will now see the latest data.`)
+    } catch (err) {
+      alert('❌ Sync failed: ' + (err.message || 'Unknown error'))
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   /* ──────────────────────── Excel Import ──────────────────────── */
   const handleExpenseExcelImport = (e) => {
@@ -638,6 +662,14 @@ export default function Finance() {
             </button>
             <button className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3" onClick={() => setIsModalOpen(true)}>
               <Plus size={14} /> Add Transaction
+            </button>
+            <button
+              onClick={handleSyncToCloud}
+              disabled={isSyncing}
+              className="text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-xl font-medium border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors disabled:opacity-50"
+              title="Force push all local data to cloud for other devices"
+            >
+              <CloudUpload size={14} className={isSyncing ? 'animate-bounce' : ''} /> {isSyncing ? 'Syncing...' : 'Sync to Cloud'}
             </button>
             <button
               className="text-xs flex items-center gap-1.5 py-1.5 px-3 rounded-xl font-medium border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
