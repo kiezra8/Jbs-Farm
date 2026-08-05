@@ -36,7 +36,8 @@ export const useFinanceStore = create((set, get) => ({
       }
     }
 
-    const transactions = await db.finances.orderBy('date').reverse().toArray()
+    const rawTxs = await db.finances.toArray()
+    const transactions = rawTxs.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''))
     set({ transactions, loading: false })
   },
 
@@ -46,7 +47,12 @@ export const useFinanceStore = create((set, get) => ({
     const record = { ...data, id, createdAt: now }
     await db.finances.add(record)
     const tx = await db.finances.get(id)
-    set(s => ({ transactions: [tx, ...s.transactions] }))
+    set(s => {
+      const updated = [tx, ...s.transactions]
+      return {
+        transactions: updated.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''))
+      }
+    })
     // Sync to Supabase for cross-device visibility
     pushFinanceToSupabase(tx)
     return tx
@@ -55,7 +61,12 @@ export const useFinanceStore = create((set, get) => ({
   updateTransaction: async (id, data) => {
     await db.finances.update(id, { ...data, updatedAt: new Date().toISOString() })
     const tx = await db.finances.get(id)
-    set(s => ({ transactions: s.transactions.map(t => t.id === id ? tx : t) }))
+    set(s => {
+      const updated = s.transactions.map(t => t.id === id ? tx : t)
+      return {
+        transactions: updated.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''))
+      }
+    })
     // Sync to Supabase
     pushFinanceToSupabase(tx)
   },

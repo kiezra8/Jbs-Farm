@@ -17,6 +17,24 @@ const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 
 const MILK_PRICE_PER_LITRE = 1500
 
+const formatDateClean = (dStr) => {
+  if (!dStr) return '—'
+  try {
+    const parts = String(dStr).split('-')
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10)
+      const m = parseInt(parts[1], 10) - 1
+      const d = parseInt(parts[2], 10)
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        return format(new Date(y, m, d), 'dd MMM yyyy')
+      }
+    }
+    return format(new Date(dStr), 'dd MMM yyyy')
+  } catch (_) {
+    return dStr
+  }
+}
+
 export default function Finance() {
   const { transactions, loadTransactions, getMonthlyStats, getDailyStats, addTransaction, updateTransaction, deleteTransaction, clearAllTransactions } = useFinanceStore()
   const { records: milkRecords, loadRecords: loadMilkRecords } = useMilkStore()
@@ -27,8 +45,7 @@ export default function Finance() {
   const [filterType, setFilterType] = useState('All')
   const [filterSource, setFilterSource] = useState('All')
   const [filterCategory, setFilterCategory] = useState('All')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [filterMonth, setFilterMonth] = useState('All')
 
   // Monthly Revenue Panel state
   const currentYear = new Date().getFullYear()
@@ -178,8 +195,7 @@ export default function Finance() {
     if (filterType !== 'All' && t.type !== filterType) return false
     if (filterSource !== 'All' && t.source !== filterSource) return false
     if (filterCategory !== 'All' && t.category !== filterCategory) return false
-    if (dateFrom && t.date < dateFrom) return false
-    if (dateTo && t.date > dateTo) return false
+    if (filterMonth !== 'All' && t.date && !t.date.startsWith(filterMonth)) return false
     return true
   })
 
@@ -187,11 +203,10 @@ export default function Finance() {
     setFilterType('All')
     setFilterSource('All')
     setFilterCategory('All')
-    setDateFrom('')
-    setDateTo('')
+    setFilterMonth('All')
   }
 
-  const hasActiveFilters = filterType !== 'All' || filterSource !== 'All' || filterCategory !== 'All' || dateFrom || dateTo
+  const hasActiveFilters = filterType !== 'All' || filterSource !== 'All' || filterCategory !== 'All' || filterMonth !== 'All'
 
   /* ──────────────────────── Monthly Revenue Computation ──────────────────────── */
   const allMonthlyData = useMemo(() => {
@@ -251,6 +266,15 @@ export default function Finance() {
     years.add(String(currentYear))
     return [...years].map(Number).sort((a, b) => b - a)
   }, [transactions, milkRecords, currentYear])
+
+  // Available months for the filter dropdown (sorted latest first)
+  const availableMonths = useMemo(() => {
+    const prefixes = new Set(transactions.map(t => t.date?.slice(0, 7)).filter(Boolean))
+    return [...prefixes].sort((a, b) => b.localeCompare(a)).map(prefix => {
+      const [y, m] = prefix.split('-')
+      return { value: prefix, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}` }
+    })
+  }, [transactions])
 
   /* ──────────────────────── Stats ──────────────────────── */
   const monthStats = getMonthlyStats()
@@ -526,7 +550,7 @@ export default function Finance() {
   const columns = [
     {
       key: 'date', label: 'Date',
-      render: (val) => <span className="text-slate-300 whitespace-nowrap">{(() => { try { return format(new Date(val), 'dd MMM yyyy') } catch { return val } })()}</span>
+      render: (val) => <span className="text-slate-300 whitespace-nowrap font-medium">{formatDateClean(val)}</span>
     },
     {
       key: 'type', label: 'Type',
@@ -891,9 +915,7 @@ export default function Finance() {
                     onClick={() => {
                       const y = String(selectedYear)
                       const m = String(selectedMonthIdx + 1).padStart(2, '0')
-                      const daysInMonth = new Date(selectedYear, selectedMonthIdx + 1, 0).getDate()
-                      setDateFrom(`${y}-${m}-01`)
-                      setDateTo(`${y}-${m}-${daysInMonth}`)
+                      setFilterMonth(`${y}-${m}`)
                       setFilterType('All')
                       setFilterSource('All')
                       setFilterCategory('All')
@@ -954,22 +976,20 @@ export default function Finance() {
               {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
 
-            <input
-              type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            <select
+              value={filterMonth}
+              onChange={e => setFilterMonth(e.target.value)}
               className="text-xs rounded-lg px-2.5 py-1.5 border outline-none transition-colors"
               style={{ background: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)', color: 'var(--color-text-primary)' }}
-              title="From date"
-            />
-            <span className="text-slate-500 text-xs">to</span>
-            <input
-              type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="text-xs rounded-lg px-2.5 py-1.5 border outline-none transition-colors"
-              style={{ background: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)', color: 'var(--color-text-primary)' }}
-              title="To date"
-            />
+            >
+              <option value="All">All Months</option>
+              {availableMonths.map(mo => (
+                <option key={mo.value} value={mo.value}>{mo.label}</option>
+              ))}
+            </select>
 
             {hasActiveFilters && (
-              <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors ml-auto">
+              <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors">
                 <X size={12} /> Clear
               </button>
             )}
