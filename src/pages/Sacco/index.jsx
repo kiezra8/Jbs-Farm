@@ -722,8 +722,9 @@ export default function Sacco() {
   const investorsColumns = [
     { key: 'name', label: 'Investor Name', render: (val, row) => {
       const isMarketing = row.marketingStrategy
+      const isPaired = !!row.pairedWith
+      const program = row.programAmount || (isPaired ? 4000000 : 8000000)
       const paid = row.investmentAmount || 0
-      const program = row.programAmount || 8000000
       const cleared = row.status === 'CLEARED' || (paid >= program && program > 0)
       const markColor = isMarketing 
         ? 'bg-yellow-500' 
@@ -737,34 +738,51 @@ export default function Sacco() {
             <span className={`w-3 h-3 border border-black/20 ${markColor} shrink-0`}></span>
             <span className="text-slate-200 underline underline-offset-4 decoration-slate-600">{val}</span>
           </button>
-          {row.pairedWith && (
-            <div className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 border border-purple-500/20 rounded inline-block">
-              Paired: {row.pairedWithName || 'Partner'} (50% Share)
-            </div>
-          )}
         </div>
       )
     }},
     { key: 'investorType', label: 'Type', render: (val, row) => {
-      const type = val || row.category || 'Money Maker'
+      const rawType = val || row.category || 'Money Maker'
+      const type = rawType === 'New Farmer' ? 'New Farmer' : 'Money Maker'
       return (
         <span className={`px-2 py-1 rounded-full text-[10px] font-medium ${type === 'Money Maker' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
           {type}
         </span>
       )
     }},
-    { key: 'investmentPhase', label: 'Phase', render: (val) => <span className="text-slate-300 text-xs">{val || 'Phase 3'}</span> },
-    { key: 'programAmount', label: 'Program', render: (val, row) => {
-      const program = val || 8000000
+    { key: 'investmentPhase', label: 'Phase', render: (val) => {
+      const phase = ['Phase 1', 'Phase 2', 'Phase 3'].includes(val) ? val : 'Phase 1'
+      return <span className="text-slate-300 text-xs font-semibold">{phase}</span>
+    }},
+    { key: 'pairing', label: 'Pairing', render: (_, row) => {
+      const isPaired = !!row.pairedWith
+      return isPaired ? (
+        <div className="space-y-0.5">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+            Paired
+          </span>
+          {row.pairedWithName && <p className="text-[9px] text-purple-400 truncate max-w-[110px]">With {row.pairedWithName}</p>}
+        </div>
+      ) : (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/15 text-slate-400 border border-slate-500/20">
+          Alone
+        </span>
+      )
+    }},
+    { key: 'programAmount', label: 'Program Target', render: (val, row) => {
+      const isPaired = !!row.pairedWith
+      const program = val || (isPaired ? 4000000 : 8000000)
+      const units = Math.max(1, Math.round(program / (isPaired ? 4000000 : 8000000)))
       return (
         <div className="text-xs">
-          <span className="text-slate-300 font-medium">{formatUGX(program)}</span>
-          {row.pairedWith && <p className="text-[9px] text-slate-500">1/2 of standard unit</p>}
+          <span className="text-slate-200 font-bold">{formatUGX(program)}</span>
+          <p className="text-[9px] text-slate-400">{units} Unit(s) {isPaired ? '(50% Paired Share)' : '(Full Share)'}</p>
         </div>
       )
     }},
     { key: 'investmentAmount', label: 'Paid', render: (val, row) => {
-      const program = row.programAmount || 8000000
+      const isPaired = !!row.pairedWith
+      const program = row.programAmount || (isPaired ? 4000000 : 8000000)
       const paid = val || 0
       const cleared = row.status === 'CLEARED' || (paid >= program && program > 0)
       return (
@@ -775,14 +793,19 @@ export default function Sacco() {
       )
     }},
     { key: 'balance', label: 'Balance', render: (val, row) => {
-      const balance = val || (row.programAmount ? row.programAmount - (row.investmentAmount || 0) : 0)
-      return balance > 0 
-        ? <span className="text-red-400 font-semibold">{formatUGX(balance)}</span>
-        : <span className="text-emerald-400 font-semibold">Cleared ✓</span>
+      const isPaired = !!row.pairedWith
+      const program = row.programAmount || (isPaired ? 4000000 : 8000000)
+      const paid = row.investmentAmount || 0
+      const cleared = row.status === 'CLEARED' || paid >= program
+      const balance = cleared ? 0 : Math.max(0, program - paid)
+      return cleared || balance <= 0 
+        ? <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 inline-block">Nill</span>
+        : <span className="text-red-400 font-semibold">{formatUGX(balance)}</span>
     }},
     { key: 'status', label: 'Status', render: (val, row) => {
+      const isPaired = !!row.pairedWith
+      const program = row.programAmount || (isPaired ? 4000000 : 8000000)
       const paid = row.investmentAmount || 0
-      const program = row.programAmount || 8000000
       const cleared = val === 'CLEARED' || (paid >= program && program > 0)
       const isMarketing = row.marketingStrategy
       if (isMarketing) return <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/20">Marketing</span>
@@ -794,9 +817,9 @@ export default function Sacco() {
       <button onClick={() => {
         setEditingInvestor(row)
         setInvestorForm({
-          category: row.category || 'Money Maker',
-          investorType: row.investorType || row.category || 'Money Maker',
-          investmentPhase: row.investmentPhase || 'Phase 3',
+          category: row.category === 'New Farmer' ? 'New Farmer' : 'Money Maker',
+          investorType: row.investorType === 'New Farmer' ? 'New Farmer' : 'Money Maker',
+          investmentPhase: ['Phase 1', 'Phase 2', 'Phase 3'].includes(row.investmentPhase) ? row.investmentPhase : 'Phase 1',
           marketingStrategy: row.marketingStrategy || false,
           addPaymentAmount: '',
           paymentMethod: 'Cash',
@@ -1109,7 +1132,7 @@ export default function Sacco() {
             onClick={() => setActiveTab('finance')} 
             className={`px-4 py-3 text-sm font-semibold rounded-xl text-left flex items-center gap-3 transition-colors ${activeTab === 'finance' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-transparent'}`}
           >
-            <DollarSign size={18} /> Farm Finances
+            <DollarSign size={18} /> Petty cash utilization
           </button>
         </div>
 
@@ -1693,34 +1716,36 @@ export default function Sacco() {
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
-              <input 
-                type="text" 
+              <select 
                 className="input-field" 
-                placeholder="e.g. Phase 1, Phase 3..."
-                value={investorForm.investmentPhase} 
-                onChange={e => setInvestorForm({ ...investorForm, investmentPhase: e.target.value })} 
-              />
+                value={investorForm.investmentPhase || 'Phase 1'} 
+                onChange={e => setInvestorForm({ ...investorForm, investmentPhase: e.target.value })}
+              >
+                <option value="Phase 1">Phase 1</option>
+                <option value="Phase 2">Phase 2</option>
+                <option value="Phase 3">Phase 3</option>
+              </select>
             </div>
 
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">Pair with another Investor</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Pairing Status</label>
               <select 
                 className="input-field" 
                 value={investorForm.pairedWith || ''} 
                 onChange={e => setInvestorForm({ ...investorForm, pairedWith: e.target.value })}
               >
-                <option value="">-- No Pairing --</option>
+                <option value="">Alone (Single Investor)</option>
                 {investorsData
                   .filter(inv => inv.memberId !== editingInvestor?.memberId)
                   .map(inv => (
                     <option key={inv.memberId || inv.id} value={inv.memberId}>
-                      {inv.name} ({inv.investorType || 'Investor'})
+                      Paired with {inv.name} ({inv.investorType || 'Investor'})
                     </option>
                   ))
                 }
               </select>
               <p className="text-[10px] text-slate-500 mt-1">
-                If paired, both investors will automatically split payment goals (half of standard unit each) and payments will be credited 50/50.
+                If paired, both investors split payment goals (50% of unit cost each) and transaction records are listed separately for each partner.
               </p>
             </div>
           </div>

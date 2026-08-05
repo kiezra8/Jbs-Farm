@@ -469,15 +469,20 @@ export default function Finance() {
   /* ──────────────────────── Form Save ──────────────────────── */
   const handleSave = async (e) => {
     e.preventDefault()
-    const payload = { ...formData, amount: Number(formData.amount) || 0 }
-    if (editingTransaction) {
-      await updateTransaction(editingTransaction.id, payload)
-    } else {
-      await addTransaction(payload)
+    try {
+      const payload = { ...formData, amount: Number(formData.amount) || 0 }
+      if (editingTransaction) {
+        await updateTransaction(editingTransaction.id, payload)
+      } else {
+        await addTransaction(payload)
+      }
+      setIsModalOpen(false)
+      setEditingTransaction(null)
+      setFormData(initialForm)
+    } catch (err) {
+      console.error('Failed to save transaction:', err)
+      alert('Failed to save transaction: ' + (err.message || 'Unknown error'))
     }
-    setIsModalOpen(false)
-    setEditingTransaction(null)
-    setFormData(initialForm)
   }
 
   /* ──────────────────────── Table columns ──────────────────────── */
@@ -547,8 +552,8 @@ export default function Finance() {
         {/* ── Page Header ── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="page-title">Financial Management</h1>
-            <p className="text-slate-400 text-sm mt-0.5">Track income, expenses &amp; farm profitability</p>
+            <h1 className="page-title">Petty Cash Utilization</h1>
+            <p className="text-slate-400 text-sm mt-0.5">Track income, petty cash expenses &amp; farm profitability</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleExpenseExcelImport} ref={excelInputRef} className="hidden" />

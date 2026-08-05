@@ -92,7 +92,7 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
 
   if (!member) return null
 
-  const isInvestor = (Array.isArray(biodata.category) ? biodata.category : [biodata.category]).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || memberInvestor !== undefined;
+  const isInvestor = (Array.isArray(biodata.category) ? biodata.category : [biodata.category]).some(c => ['Investor', 'Money Maker', 'New Farmer'].includes(c)) || memberInvestor !== undefined;
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0]
@@ -169,7 +169,10 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
 
   const handleSaveInvestorConfig = async (e) => {
     e.preventDefault()
-    const targetAmount = (Number(investorUnits) || 1) * 8000000
+    const isPaired = !!investorData.pairedWith
+    const units = Number(investorUnits) || 1
+    const rawTarget = units * 8000000
+    const targetAmount = isPaired ? rawTarget / 2 : rawTarget
     
     if (memberInvestor) {
       await updateInvestor(memberInvestor.id, {
@@ -384,22 +387,35 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
           </div>
         )}
 
-        {activeTab === 'investor' && isInvestor && (
+        {activeTab === 'investor' && isInvestor && (() => {
+          const isPaired = !!investorData.pairedWith
+          const units = Number(investorUnits) || 1
+          const targetAmt = isPaired ? (units * 8000000) / 2 : (units * 8000000)
+          const remBal = Math.max(0, targetAmt - investorPaid)
+          const isCleared = memberInvestor?.status === 'CLEARED' || investorPaid >= targetAmt || remBal === 0
+
+          return (
           <div className="space-y-6">
             <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-xl">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-xs text-purple-400 mb-1">Target Amount</p>
-                  <p className="text-xl font-bold text-white">{formatUGX((Number(investorUnits) || 1) * 8000000)}</p>
-                  <p className="text-[10px] text-slate-400">{investorUnits} Unit(s) of 8M</p>
+                  <p className="text-xl font-bold text-white">{formatUGX(targetAmt)}</p>
+                  <p className="text-[10px] text-slate-400">{units} Unit(s) {isPaired ? '(50% Paired Share)' : '(Full Share)'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-emerald-400 mb-1">Total Paid</p>
                   <p className="text-xl font-bold text-white">{formatUGX(investorPaid)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-red-400 mb-1">Remaining Balance</p>
-                  <p className="text-xl font-bold text-white">{formatUGX(Math.max(0, ((Number(investorUnits) || 1) * 8000000) - investorPaid))}</p>
+                  <p className="text-xs text-slate-400 mb-1">Remaining Balance</p>
+                  <p className="text-xl font-bold">
+                    {isCleared ? (
+                      <span className="text-emerald-400">Nill ✓</span>
+                    ) : (
+                      <span className="text-red-400">{formatUGX(remBal)}</span>
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
@@ -430,13 +446,18 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Investor Type</label>
-                  <select className="input-field" value={investorData.investorType || investorData.category} onChange={e => setInvestorData({...investorData, investorType: e.target.value, category: e.target.value})}>
-                    <option value="Money Maker">Money Maker</option><option value="New Farmer">New Farmer</option><option value="Phase 3">Phase 3</option>
+                  <select className="input-field" value={investorData.investorType || investorData.category || 'Money Maker'} onChange={e => setInvestorData({...investorData, investorType: e.target.value, category: e.target.value})}>
+                    <option value="Money Maker">Money Maker</option>
+                    <option value="New Farmer">New Farmer</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
-                  <input type="text" className="input-field" placeholder="e.g. Phase 1" value={investorData.investmentPhase || ''} onChange={e => setInvestorData({...investorData, investmentPhase: e.target.value})} />
+                  <select className="input-field" value={investorData.investmentPhase || 'Phase 1'} onChange={e => setInvestorData({...investorData, investmentPhase: e.target.value})}>
+                    <option value="Phase 1">Phase 1</option>
+                    <option value="Phase 2">Phase 2</option>
+                    <option value="Phase 3">Phase 3</option>
+                  </select>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-slate-400 mb-1">Units (1 Unit = 8M)</label>
@@ -450,16 +471,17 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Pair with another Investor</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Pairing Status</label>
                   <select className="input-field" value={investorData.pairedWith || ''} onChange={e => setInvestorData({...investorData, pairedWith: e.target.value})}>
-                    <option value="">-- No Pairing --</option>
+                    <option value="">Alone (Single Investor)</option>
                     {members
-                      .filter(m => m.id !== member.id && (Array.isArray(m.category) ? m.category : [m.category]).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)))
+                      .filter(m => m.id !== member.id && (Array.isArray(m.category) ? m.category : [m.category]).some(c => ['Investor', 'Money Maker', 'New Farmer'].includes(c)))
                       .map(m => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
+                        <option key={m.id} value={m.id}>Paired with {m.name}</option>
                       ))
                     }
                   </select>
+                  <p className="text-[10px] text-slate-500 mt-1">Paired investors pay 50% of the total unit cost (e.g. 4M for 1 unit).</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5">
@@ -469,7 +491,7 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
               <div className="flex justify-end pt-4"><button type="submit" className="btn-secondary flex gap-2 items-center border-slate-500"><Save size={16}/> Save Configuration</button></div>
             </form>
           </div>
-        )}
+          )})()}
 
         {activeTab === 'history' && (
           <div className="space-y-4">

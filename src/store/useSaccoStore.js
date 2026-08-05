@@ -320,9 +320,12 @@ export const useSaccoStore = create((set, get) => ({
         memberId: id,
         category: 'Money Maker', 
         investorType: 'Money Maker',
-        investmentPhase: 'Initial',
+        investmentPhase: 'Phase 1',
         marketingStrategy: false,
         investmentAmount: 8000000,
+        programAmount: 8000000,
+        balance: 0,
+        status: 'CLEARED',
         moneyMakerAmount: 350000,
         cowsPerYear: 0,
         createdAt: now
@@ -375,9 +378,12 @@ export const useSaccoStore = create((set, get) => ({
         memberId: id,
         category: 'Money Maker',
         investorType: 'Money Maker',
-        investmentPhase: 'Initial',
+        investmentPhase: 'Phase 1',
         marketingStrategy: false,
         investmentAmount: 8000000,
+        programAmount: 8000000,
+        balance: 0,
+        status: 'CLEARED',
         moneyMakerAmount: 350000,
         cowsPerYear: 0,
         createdAt: new Date().toISOString()
@@ -488,15 +494,31 @@ export const useSaccoStore = create((set, get) => ({
 
   updateInvestor: async (id, data) => {
     const currentInv = await db.saccoInvestors.get(id)
+    const validInvestorType = data.investorType === 'New Farmer' ? 'New Farmer' : 'Money Maker'
+    const validPhase = ['Phase 1', 'Phase 2', 'Phase 3'].includes(data.investmentPhase) ? data.investmentPhase : 'Phase 1'
+
     if (!currentInv) {
-      // If it doesn't exist, create it (handles cases where a new investor is created)
+      // If it doesn't exist, create it
       const now = new Date().toISOString()
-      const newRecord = { id, createdAt: now, ...data }
+      const newRecord = { 
+        id, 
+        createdAt: now, 
+        ...data, 
+        investorType: validInvestorType,
+        category: validInvestorType,
+        investmentPhase: validPhase 
+      }
       if (data.pairedWith) {
-        newRecord.programAmount = 4000000
+        newRecord.programAmount = data.programAmount || 4000000
         const partnerMember = await db.saccoMembers.get(data.pairedWith)
         newRecord.pairedWithName = partnerMember ? partnerMember.name : ''
       }
+      const pAmt = newRecord.programAmount || 8000000
+      const paidAmt = Number(newRecord.investmentAmount) || 0
+      const isClr = paidAmt >= pAmt
+      newRecord.balance = isClr ? 0 : Math.max(0, pAmt - paidAmt)
+      newRecord.status = isClr ? 'CLEARED' : 'PENDING'
+
       await db.saccoInvestors.add(newRecord)
       
       // Handle setting pairing on partner too
@@ -504,10 +526,15 @@ export const useSaccoStore = create((set, get) => ({
         const partnerInv = await db.saccoInvestors.where('memberId').equals(data.pairedWith).first()
         if (partnerInv) {
           const thisMember = await db.saccoMembers.get(data.memberId)
+          const pPartnerTarget = newRecord.programAmount || 4000000
+          const pPartnerPaid = Number(partnerInv.investmentAmount) || 0
+          const pPartnerCleared = pPartnerPaid >= pPartnerTarget
           await db.saccoInvestors.update(partnerInv.id, {
             pairedWith: data.memberId,
             pairedWithName: thisMember ? thisMember.name : '',
-            programAmount: 4000000
+            programAmount: pPartnerTarget,
+            balance: pPartnerCleared ? 0 : Math.max(0, pPartnerTarget - pPartnerPaid),
+            status: pPartnerCleared ? 'CLEARED' : 'PENDING'
           })
         }
       }
@@ -517,19 +544,27 @@ export const useSaccoStore = create((set, get) => ({
 
     const oldPairedWith = currentInv.pairedWith
     const newPairedWith = data.pairedWith // memberId of partner
-    const updatedData = { ...data }
+    const updatedData = { 
+      ...data,
+      investorType: validInvestorType,
+      category: validInvestorType,
+      investmentPhase: validPhase
+    }
 
     if (newPairedWith) {
-      updatedData.programAmount = 4000000
+      updatedData.programAmount = data.programAmount || 4000000
       const partnerMember = await db.saccoMembers.get(newPairedWith)
       updatedData.pairedWithName = partnerMember ? partnerMember.name : ''
     } else {
       updatedData.pairedWithName = ''
       updatedData.pairedWith = ''
-      if (currentInv.programAmount === 4000000) {
-        updatedData.programAmount = 8000000
-      }
     }
+
+    const pAmt = updatedData.programAmount || 8000000
+    const paidAmt = Number(updatedData.investmentAmount) || 0
+    const isClr = paidAmt >= pAmt
+    updatedData.balance = isClr ? 0 : Math.max(0, pAmt - paidAmt)
+    updatedData.status = isClr ? 'CLEARED' : 'PENDING'
 
     await db.saccoInvestors.update(id, updatedData)
 
@@ -539,10 +574,15 @@ export const useSaccoStore = create((set, get) => ({
       if (oldPairedWith) {
         const oldPartner = await db.saccoInvestors.where('memberId').equals(oldPairedWith).first()
         if (oldPartner) {
+          const oldTarget = oldPartner.programAmount * 2 || 8000000
+          const oldPaid = Number(oldPartner.investmentAmount) || 0
+          const oldCleared = oldPaid >= oldTarget
           await db.saccoInvestors.update(oldPartner.id, {
             pairedWith: '',
             pairedWithName: '',
-            programAmount: 8000000
+            programAmount: oldTarget,
+            balance: oldCleared ? 0 : Math.max(0, oldTarget - oldPaid),
+            status: oldCleared ? 'CLEARED' : 'PENDING'
           })
         }
       }
@@ -551,20 +591,30 @@ export const useSaccoStore = create((set, get) => ({
       const newPartner = await db.saccoInvestors.where('memberId').equals(newPairedWith).first()
       if (newPartner) {
         const thisMember = await db.saccoMembers.get(currentInv.memberId)
+        const partnerTarget = updatedData.programAmount || 4000000
+        const partnerPaid = Number(newPartner.investmentAmount) || 0
+        const partnerCleared = partnerPaid >= partnerTarget
         await db.saccoInvestors.update(newPartner.id, {
           pairedWith: currentInv.memberId,
           pairedWithName: thisMember ? thisMember.name : '',
-          programAmount: 4000000
+          programAmount: partnerTarget,
+          balance: partnerCleared ? 0 : Math.max(0, partnerTarget - partnerPaid),
+          status: partnerCleared ? 'CLEARED' : 'PENDING'
         })
       }
     } else if (!newPairedWith && oldPairedWith) {
       // Unpair old partner
       const oldPartner = await db.saccoInvestors.where('memberId').equals(oldPairedWith).first()
       if (oldPartner) {
+        const oldTarget = (oldPartner.programAmount || 4000000) * 2
+        const oldPaid = Number(oldPartner.investmentAmount) || 0
+        const oldCleared = oldPaid >= oldTarget
         await db.saccoInvestors.update(oldPartner.id, {
           pairedWith: '',
           pairedWithName: '',
-          programAmount: 8000000
+          programAmount: oldTarget,
+          balance: oldCleared ? 0 : Math.max(0, oldTarget - oldPaid),
+          status: oldCleared ? 'CLEARED' : 'PENDING'
         })
       }
     }
@@ -577,7 +627,7 @@ export const useSaccoStore = create((set, get) => ({
     const currentInv = investors.find(i => i.id === investorId)
     if (!currentInv) return { success: false, error: 'Investor not found' }
 
-    const isPaired = currentInv.pairedWith
+    const isPaired = !!currentInv.pairedWith
     const addedAmount = Number(amountToAdd) || 0
     if (addedAmount <= 0) return { success: true }
 
@@ -587,15 +637,18 @@ export const useSaccoStore = create((set, get) => ({
     if (isPaired) {
       const halfAmount = addedAmount / 2
       const partnerInv = investors.find(i => i.memberId === currentInv.pairedWith)
+      const targetA = currentInv.programAmount || 4000000
 
       // Update current investor
       const newPaidA = (Number(currentInv.investmentAmount) || 0) + halfAmount
+      const isClearedA = newPaidA >= targetA
       await db.saccoInvestors.update(currentInv.id, {
         investmentAmount: newPaidA,
-        status: newPaidA >= (currentInv.programAmount || 4000000) ? 'CLEARED' : 'PENDING'
+        balance: isClearedA ? 0 : Math.max(0, targetA - newPaidA),
+        status: isClearedA ? 'CLEARED' : 'PENDING'
       })
 
-      // Add transaction for current investor
+      // Add transaction for current investor separately under memberId
       await db.saccoTransactions.add({
         id: crypto.randomUUID(),
         memberId: currentInv.memberId,
@@ -611,13 +664,16 @@ export const useSaccoStore = create((set, get) => ({
 
       // Update partner investor
       if (partnerInv) {
+        const targetB = partnerInv.programAmount || 4000000
         const newPaidB = (Number(partnerInv.investmentAmount) || 0) + halfAmount
+        const isClearedB = newPaidB >= targetB
         await db.saccoInvestors.update(partnerInv.id, {
           investmentAmount: newPaidB,
-          status: newPaidB >= (partnerInv.programAmount || 4000000) ? 'CLEARED' : 'PENDING'
+          balance: isClearedB ? 0 : Math.max(0, targetB - newPaidB),
+          status: isClearedB ? 'CLEARED' : 'PENDING'
         })
 
-        // Add transaction for partner investor
+        // Add transaction for partner investor separately under partner's memberId
         await db.saccoTransactions.add({
           id: crypto.randomUUID(),
           memberId: partnerInv.memberId,
@@ -632,10 +688,13 @@ export const useSaccoStore = create((set, get) => ({
         })
       }
     } else {
+      const target = currentInv.programAmount || 8000000
       const newPaid = (Number(currentInv.investmentAmount) || 0) + addedAmount
+      const isCleared = newPaid >= target
       await db.saccoInvestors.update(currentInv.id, {
         investmentAmount: newPaid,
-        status: newPaid >= (currentInv.programAmount || 8000000) ? 'CLEARED' : 'PENDING'
+        balance: isCleared ? 0 : Math.max(0, target - newPaid),
+        status: isCleared ? 'CLEARED' : 'PENDING'
       })
 
       await db.saccoTransactions.add({

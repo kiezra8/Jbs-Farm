@@ -17,7 +17,7 @@ const navItems = [
   { to: '/breeding', icon: Baby, label: 'Breeding' },
   { to: '/milk', icon: Milk, label: 'Milk Production' },
   { to: '/feed', icon: Wheat, label: 'Feed & Nutrition' },
-  { to: '/sacco', icon: Building2, label: 'SACCO & Finances' },
+  { to: '/sacco', icon: Building2, label: 'SACCO & Petty Cash' },
   { to: '/staff', icon: Users, label: 'Staff' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/reports', icon: FileText, label: 'Reports' },
