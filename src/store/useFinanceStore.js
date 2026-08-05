@@ -24,6 +24,18 @@ export const useFinanceStore = create((set, get) => ({
   loadTransactions: async () => {
     set({ loading: true })
 
+    // Remove corrupted fallback dates (Aug 4/5 2026) left by a bad import run
+    const badTxs = await db.finances.filter(t => t.date === '2026-08-04' || t.date === '2026-08-05').toArray()
+    if (badTxs.length > 0) {
+      for (const tx of badTxs) {
+        await db.finances.delete(tx.id)
+        try {
+          const { deleteSaccoRecord } = await import('../services/supabaseSyncEngine')
+          await deleteSaccoRecord('finances', tx.id)
+        } catch (_) {}
+      }
+    }
+
     const rawTxs = await db.finances.toArray()
     const transactions = rawTxs.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''))
     set({ transactions, loading: false })
