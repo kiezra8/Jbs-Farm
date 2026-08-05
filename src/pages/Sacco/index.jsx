@@ -463,24 +463,7 @@ export default function Sacco() {
   }
 
   // ─── Tables Data Preparation ───────────────────────────────────────────────
-  const hasSavingCategory = (catVal) => {
-    let cats = [];
-    if (Array.isArray(catVal)) {
-      cats = catVal;
-    } else if (typeof catVal === 'string') {
-      try {
-        if (catVal.trim().startsWith('[')) {
-          cats = JSON.parse(catVal);
-        } else {
-          cats = catVal.split(',').map(c => c.trim()).filter(Boolean);
-        }
-      } catch (_) {
-        cats = [catVal];
-      }
-    }
-    if (cats.length === 0) cats = ['Saving Member'];
-    return cats.includes('Saving Member') || cats.includes('Pioneer')
-  }
+  const hasSavingCategory = (catVal) => true
 
   const matchesFilter = (m) => {
     const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -548,7 +531,7 @@ export default function Sacco() {
     })
 
   // Build investors data:
-  // 1. Start with all members whose category includes 'Investor' or 'New Farmer'
+  // 1. Start with all members whose category includes 'Investor', 'Money Maker', or 'New Farmer'
   // 2. Merge in any existing saccoInvestors records for full detail
   const hasInvestorCategory = (catVal) => {
     let cats = []
@@ -556,22 +539,22 @@ export default function Sacco() {
     else if (typeof catVal === 'string') {
       try { cats = catVal.trim().startsWith('[') ? JSON.parse(catVal) : catVal.split(',').map(c => c.trim()) } catch (_) { cats = [catVal] }
     }
-    return cats.some(c => ['Investor', 'New Farmer', 'Pioneer'].includes(c))
+    return cats.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Pioneer', 'Phase 3'].includes(c))
   }
 
   const investorMemberIds = new Set(investors.map(i => i.memberId))
 
   // Members who have investor category but no saccoInvestors record yet
   const membersAsInvestors = members
-    .filter(m => hasInvestorCategory(m.category) && !investorMemberIds.has(m.id))
+    .filter(m => (hasInvestorCategory(m.category) || investors.length === 0) && !investorMemberIds.has(m.id))
     .map(m => ({
       id: `member-${m.id}`,
       memberId: m.id,
       name: m.name,
       category: Array.isArray(m.category) ? m.category.join(', ') : m.category,
       memberCategory: m.category,
-      investorType: 'Member',
-      investmentPhase: m.sheetSource || 'General',
+      investorType: (Array.isArray(m.category) ? m.category : [m.category]).includes('New Farmer') ? 'New Farmer' : 'Money Maker',
+      investmentPhase: m.sheetSource || 'Phase 1',
       marketingStrategy: false,
       moneyMakerAmount: 0,
       cowsPerYear: 0,
@@ -583,15 +566,14 @@ export default function Sacco() {
     return {
       ...i,
       name: member?.name || i.name || 'Unknown',
-      memberCategory: member?.category || i.category || 'Investor'
+      memberCategory: member?.category || i.category || 'Money Maker',
+      investorType: i.investorType || i.category || 'Money Maker'
     }
   })
 
   const investorsData = [...detailedInvestors, ...membersAsInvestors].filter(i => {
     const matchesSearch = i.name?.toLowerCase().includes(searchQuery.toLowerCase())
-    const catArr = Array.isArray(i.memberCategory) ? i.memberCategory : [i.memberCategory || '']
-    const matchesCat = categoryFilter ? catArr.some(c => c === categoryFilter) || i.category === categoryFilter : true
-    return matchesSearch && matchesCat
+    return matchesSearch
   })
   
   const phase3Count = investorsData.filter(i => i.investmentPhase === 'Phase 3').length
