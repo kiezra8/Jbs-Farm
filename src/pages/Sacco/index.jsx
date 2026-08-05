@@ -1804,6 +1804,34 @@ export default function Sacco() {
                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ investorForm.isBanked ? 'translate-x-5' : ''}`}/>
               </button>
             </div>
+
+            {/* Investor Payment Transaction History */}
+            {(() => {
+              const invTxs = saccoTransactions.filter(t => t.memberId === (editingInvestor?.memberId || editingInvestor?.id))
+              return (
+                <div className="space-y-2 pt-3 border-t border-white/10">
+                  <p className="text-xs font-semibold text-slate-300">Investor Payment History ({invTxs.length})</p>
+                  {invTxs.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 italic">No payments recorded for this investor yet.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {invTxs.map(tx => (
+                        <div key={tx.id} className="p-2 rounded-lg bg-white/5 border border-white/10 flex justify-between items-center text-xs">
+                          <div>
+                            <p className="text-[10px] text-slate-400">{(() => { try { return format(new Date(tx.date), 'dd MMM yyyy') } catch { return tx.date } })()}</p>
+                            <p className="font-semibold text-white">{tx.category}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-emerald-400">+{formatUGX(tx.amount)}</p>
+                            <p className="text-[9px] text-slate-500">{tx.paymentMethod}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">

@@ -72,23 +72,57 @@ export default function Finance() {
           }
 
           if (isPettyCashFormat) {
+            // Infer fallback month/year from sheet name if possible
+            const lowerSheet = sheetName.toLowerCase()
+            let sheetYear = 2026
+            let sheetMonth = 6 // Default July (0-indexed: 6 = July)
+            if (lowerSheet.includes('jan')) sheetMonth = 0
+            else if (lowerSheet.includes('feb')) sheetMonth = 1
+            else if (lowerSheet.includes('mar')) sheetMonth = 2
+            else if (lowerSheet.includes('apr')) sheetMonth = 3
+            else if (lowerSheet.includes('may')) sheetMonth = 4
+            else if (lowerSheet.includes('june') || lowerSheet.includes('jun')) sheetMonth = 5
+            else if (lowerSheet.includes('july') || lowerSheet.includes('jul')) sheetMonth = 6
+            else if (lowerSheet.includes('aug')) sheetMonth = 7
+            else if (lowerSheet.includes('sep') || lowerSheet.includes('tracker 9')) sheetMonth = 8
+            else if (lowerSheet.includes('oct') || lowerSheet.includes('tracker 10')) sheetMonth = 9
+            else if (lowerSheet.includes('nov') || lowerSheet.includes('tracker 11')) sheetMonth = 10
+            else if (lowerSheet.includes('dec') || lowerSheet.includes('tracker 12')) sheetMonth = 11
+
+            const defaultSheetDateStr = format(new Date(sheetYear, sheetMonth, 1), 'yyyy-MM-dd')
+
             const parseExcelDate = (val) => {
-              if (!val) return null
+              if (val === null || val === undefined || val === '') return null
               if (typeof val === 'number') {
                 const date = new Date((val - 25569) * 86400 * 1000)
                 try { return format(date, 'yyyy-MM-dd') } catch (_) { return null }
               }
               try {
-                const parsed = new Date(val)
+                const str = String(val).trim()
+                // Handle DD/MM/YYYY or DD-MM-YYYY format
+                const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
+                if (match) {
+                  let d = parseInt(match[1], 10)
+                  let m = parseInt(match[2], 10) - 1
+                  let y = parseInt(match[3], 10)
+                  if (y < 100) y += 2000
+                  return format(new Date(y, m, d), 'yyyy-MM-dd')
+                }
+                const parsed = new Date(str)
                 if (!isNaN(parsed.getTime())) return format(parsed, 'yyyy-MM-dd')
               } catch (_) {}
               return null
             }
-            const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+            let lastReceiptDate = defaultSheetDateStr
+            let lastPaymentDate = defaultSheetDateStr
 
             for (let i = headerIndex + 1; i < rawRows.length; i++) {
               const row = rawRows[i]
               if (!row || row.length === 0) continue
+
+              const rDateParsed = parseExcelDate(row[0])
+              if (rDateParsed) lastReceiptDate = rDateParsed
 
               const rAmount = Number(row[5]) || 0
               const rClient = String(row[1] || '').trim()
@@ -98,9 +132,12 @@ export default function Finance() {
               const isBalBF = rLowerClient.includes('bal') || rLowerClient.includes('b/f') || rLowerPart.includes('bal') || rLowerPart.includes('b/f')
 
               if (rAmount > 0 && !isBalBF) {
-                await addTransaction({ date: parseExcelDate(row[0]) || todayStr, type: 'Income', source: 'Petty Cash', category: 'Petty Cash Receipt', amount: rAmount, description: `${rClient} - ${rParticulars}`.replace(/^[\s\-]+|[\s\-]+$/g, '') || 'Petty cash receipt', reference: String(row[6] || '') })
+                await addTransaction({ date: lastReceiptDate, type: 'Income', source: 'Petty Cash', category: 'Petty Cash Receipt', amount: rAmount, description: `${rClient} - ${rParticulars}`.replace(/^[\s\-]+|[\s\-]+$/g, '') || 'Petty cash receipt', reference: String(row[6] || '') })
                 importedCount++
               }
+
+              const pDateParsed = parseExcelDate(row[8])
+              if (pDateParsed) lastPaymentDate = pDateParsed
 
               const pAmount = Number(row[11]) || 0
               const pRecipient = String(row[9] || '').trim()
@@ -111,7 +148,7 @@ export default function Finance() {
 
               if (pAmount > 0 && !isPBalBF) {
                 const pSource = String(row[12] || '').toLowerCase() === 'bank' ? 'Bank' : 'Petty Cash'
-                await addTransaction({ date: parseExcelDate(row[8]) || todayStr, type: 'Expense', source: pSource, category: pParticulars || 'General Expense', amount: pAmount, description: `${pRecipient} - ${pParticulars}`.replace(/^[\s\-]+|[\s\-]+$/g, '') || 'Petty cash payment', reference: String(row[12] || '') })
+                await addTransaction({ date: lastPaymentDate, type: 'Expense', source: pSource, category: pParticulars || 'General Expense', amount: pAmount, description: `${pRecipient} - ${pParticulars}`.replace(/^[\s\-]+|[\s\-]+$/g, '') || 'Petty cash payment', reference: String(row[12] || '') })
                 importedCount++
               }
             }
@@ -546,8 +583,7 @@ export default function Finance() {
   const uniqueCategories = [...new Set(transactions.map(t => t.category).filter(Boolean))]
 
   return (
-    <PinGuard>
-      <div className="space-y-4">
+    <div className="space-y-4">
 
         {/* ── Page Header ── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1007,6 +1043,5 @@ export default function Finance() {
           message="Are you sure you want to permanently delete this financial transaction?"
         />
       </div>
-    </PinGuard>
   )
 }

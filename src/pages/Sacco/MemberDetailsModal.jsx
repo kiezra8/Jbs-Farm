@@ -490,6 +490,32 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
               </div>
               <div className="flex justify-end pt-4"><button type="submit" className="btn-secondary flex gap-2 items-center border-slate-500"><Save size={16}/> Save Configuration</button></div>
             </form>
+
+            {/* Investor Payment Transaction History */}
+            <div className="space-y-3 pt-4 border-t border-white/10">
+              <h4 className="font-semibold text-slate-300 text-sm">Investor Payment History</h4>
+              {memberTransactions.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No transaction records found for this member.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {memberTransactions.map(tx => (
+                    <div key={tx.id} className="p-2.5 rounded-xl border border-white/10 flex justify-between items-center bg-white/5 text-xs">
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-medium">{(() => { try { return format(new Date(tx.date), 'dd MMM yyyy') } catch { return tx.date } })()}</p>
+                        <p className="font-semibold text-white">{tx.category}</p>
+                        <p className="text-[10px] text-slate-400">{tx.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-bold ${tx.type === 'Income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {tx.type === 'Income' ? '+' : '-'}{formatUGX(tx.amount)}
+                        </p>
+                        <p className="text-[9px] text-slate-500">{tx.paymentMethod}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           )})()}
 
@@ -506,7 +532,7 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                 {memberTransactions.map(tx => (
                   <div key={tx.id} className="p-3 rounded-xl border border-white/10 flex justify-between items-center bg-white/5 hover:bg-white/10 transition-colors">
                     <div>
-                      <p className="text-xs text-slate-400 font-medium">{format(new Date(tx.date), 'dd MMM yyyy')}</p>
+                      <p className="text-xs text-slate-400 font-medium">{(() => { try { return format(new Date(tx.date), 'dd MMM yyyy') } catch { return tx.date } })()}</p>
                       <p className="font-semibold text-white">{tx.category}</p>
                       <p className="text-[10px] text-slate-400">{tx.description}</p>
                     </div>

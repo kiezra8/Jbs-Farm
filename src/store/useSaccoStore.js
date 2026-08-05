@@ -568,6 +568,18 @@ export const useSaccoStore = create((set, get) => ({
 
     await db.saccoInvestors.update(id, updatedData)
 
+    // Synchronize member record's category so investor category changes persist permanently
+    const targetMemberId = updatedData.memberId || currentInv.memberId
+    if (targetMemberId) {
+      const memberRec = await db.saccoMembers.get(targetMemberId)
+      if (memberRec) {
+        let memberCats = Array.isArray(memberRec.category) ? [...memberRec.category] : [memberRec.category || 'Member']
+        memberCats = memberCats.filter(c => !['Money Maker', 'New Farmer', 'Investor', 'Phase 3'].includes(c))
+        memberCats.push(validInvestorType)
+        await db.saccoMembers.update(targetMemberId, { category: memberCats })
+      }
+    }
+
     // Handle partner's record configuration
     if (newPairedWith && newPairedWith !== oldPairedWith) {
       // Unpair old partner
