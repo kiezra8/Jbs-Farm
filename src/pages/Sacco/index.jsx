@@ -1789,7 +1789,7 @@ export default function Sacco() {
 
             {/* Investor Payment Transaction History */}
             {(() => {
-              const invTxs = saccoTransactions.filter(t => t.memberId === (editingInvestor?.memberId || editingInvestor?.id))
+              const invTxs = (transactions || []).filter(t => t.memberId === (editingInvestor?.memberId || editingInvestor?.id))
               return (
                 <div className="space-y-2 pt-3 border-t border-white/10">
                   <p className="text-xs font-semibold text-slate-300">Investor Payment History ({invTxs.length})</p>
