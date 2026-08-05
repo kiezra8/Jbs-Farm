@@ -180,6 +180,13 @@ export default function Finance() {
             }
           }
         }
+        // Push all newly imported transactions to Supabase for cross-device visibility
+        try {
+          const { forceUploadSaccoToSupabase } = await import('../../services/supabaseSyncEngine')
+          await forceUploadSaccoToSupabase()
+        } catch (err) {
+          console.warn('Post-import cloud sync notice:', err)
+        }
         alert(`Successfully imported ${importedCount} transactions from Excel sheet(s)!`)
       } catch (err) {
         console.error('Import failed:', err)
@@ -724,21 +731,42 @@ export default function Finance() {
               {/* Year selector */}
               <div className="flex items-center gap-1">
               <button
-                onClick={() => setSelectedYear(y => y - 1)}
+                onClick={() => {
+                  const newYear = selectedYear - 1
+                  setSelectedYear(newYear)
+                  if (filterMonth !== 'All') {
+                    const mStr = String(selectedMonthIdx + 1).padStart(2, '0')
+                    setFilterMonth(`${newYear}-${mStr}`)
+                  }
+                }}
                 className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
               >
                 <ChevronLeft size={15} />
               </button>
               <select
                 value={selectedYear}
-                onChange={e => setSelectedYear(Number(e.target.value))}
+                onChange={e => {
+                  const newYear = Number(e.target.value)
+                  setSelectedYear(newYear)
+                  if (filterMonth !== 'All') {
+                    const mStr = String(selectedMonthIdx + 1).padStart(2, '0')
+                    setFilterMonth(`${newYear}-${mStr}`)
+                  }
+                }}
                 className="text-xs font-semibold rounded-lg px-3 py-1.5 border outline-none"
                 style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#f8fafc' }}
               >
                 {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               <button
-                onClick={() => setSelectedYear(y => y + 1)}
+                onClick={() => {
+                  const newYear = selectedYear + 1
+                  setSelectedYear(newYear)
+                  if (filterMonth !== 'All') {
+                    const mStr = String(selectedMonthIdx + 1).padStart(2, '0')
+                    setFilterMonth(`${newYear}-${mStr}`)
+                  }
+                }}
                 disabled={selectedYear >= currentYear}
                 className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors disabled:opacity-30"
               >
@@ -753,7 +781,12 @@ export default function Finance() {
             {allMonthlyData.map(m => (
               <button
                 key={m.monthIdx}
-                onClick={() => setSelectedMonthIdx(m.monthIdx)}
+                onClick={() => {
+                  setSelectedMonthIdx(m.monthIdx)
+                  const y = String(selectedYear)
+                  const mStr = String(m.monthIdx + 1).padStart(2, '0')
+                  setFilterMonth(`${y}-${mStr}`)
+                }}
                 className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 min-w-[56px]
                   ${selectedMonthIdx === m.monthIdx
                     ? 'bg-emerald-500/25 border border-emerald-500/50 text-emerald-300'
@@ -788,7 +821,12 @@ export default function Finance() {
                   return (
                     <button
                       key={m.monthIdx}
-                      onClick={() => setSelectedMonthIdx(m.monthIdx)}
+                      onClick={() => {
+                        setSelectedMonthIdx(m.monthIdx)
+                        const y = String(selectedYear)
+                        const mStr = String(m.monthIdx + 1).padStart(2, '0')
+                        setFilterMonth(`${y}-${mStr}`)
+                      }}
                       className="flex-1 flex flex-col items-center gap-0.5 group cursor-pointer"
                       title={`${m.fullLabel}\nIncome: ${formatUGX(m.income)}\nMilk: ${formatUGX(m.milkRevenue)} (${m.netMilkLitres.toFixed(1)}L)\nExpenses: ${formatUGX(m.expenses)}`}
                     >
@@ -978,9 +1016,17 @@ export default function Finance() {
 
             <select
               value={filterMonth}
-              onChange={e => setFilterMonth(e.target.value)}
-              className="text-xs rounded-lg px-2.5 py-1.5 border outline-none transition-colors"
-              style={{ background: 'rgba(255,255,255,0.06)', borderColor: 'rgba(255,255,255,0.12)', color: 'var(--color-text-primary)' }}
+              onChange={e => {
+                const val = e.target.value
+                setFilterMonth(val)
+                if (val !== 'All') {
+                  const [y, m] = val.split('-').map(Number)
+                  if (y) setSelectedYear(y)
+                  if (m) setSelectedMonthIdx(m - 1)
+                }
+              }}
+              className="text-xs rounded-lg px-2.5 py-1.5 border outline-none transition-colors font-medium"
+              style={{ background: 'rgba(255,255,255,0.08)', borderColor: filterMonth !== 'All' ? 'rgba(52,211,153,0.4)' : 'rgba(255,255,255,0.12)', color: '#f8fafc' }}
             >
               <option value="All">All Months</option>
               {availableMonths.map(mo => (

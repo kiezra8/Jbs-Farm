@@ -39,6 +39,14 @@ export const useFinanceStore = create((set, get) => ({
     const rawTxs = await db.finances.toArray()
     const transactions = rawTxs.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''))
     set({ transactions, loading: false })
+
+    // Fetch latest from Supabase in background if online so all users see new entries
+    if (navigator.onLine) {
+      try {
+        const { fetchAllSaccoFromSupabase } = await import('../services/supabaseSyncEngine')
+        fetchAllSaccoFromSupabase()
+      } catch (_) {}
+    }
   },
 
   addTransaction: async (data) => {
