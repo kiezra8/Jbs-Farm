@@ -258,10 +258,26 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                   <div className="flex flex-wrap gap-2">
                     {['Saving Member', 'Pioneer', 'Investor'].map(cat => {
                       const catArr = Array.isArray(biodata.category) ? biodata.category : [biodata.category]
-                      const selected = catArr.includes(cat)
+                      const selected = cat === 'Investor'
+                        ? catArr.some(c => ['Investor', 'Money Maker', 'New Farmer'].includes(c))
+                        : catArr.includes(cat)
+
                       return (
                         <button key={cat} type="button" onClick={() => {
-                          const updated = selected ? catArr.filter(c => c !== cat) : [...catArr, cat]
+                          let updated
+                          if (selected) {
+                            if (cat === 'Investor') {
+                              updated = catArr.filter(c => !['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c))
+                            } else {
+                              updated = catArr.filter(c => c !== cat)
+                            }
+                          } else {
+                            if (cat === 'Investor') {
+                              updated = [...catArr.filter(c => !['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)), 'Investor', 'Money Maker']
+                            } else {
+                              updated = [...catArr, cat]
+                            }
+                          }
                           setBiodata({...biodata, category: updated.length ? updated : [cat]})
                         }} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                           selected 

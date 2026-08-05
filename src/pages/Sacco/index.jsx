@@ -243,26 +243,62 @@ export default function Sacco() {
           }
 
           if (isPettyCashFormat) {
+            // Infer fallback month/year from sheet name if possible
+            const lowerSheet = sheetName.toLowerCase()
+            let sheetYear = 2026
+            let sheetMonth = 6 // Default July (0-indexed: 6 = July)
+            if (lowerSheet.includes('jan')) sheetMonth = 0
+            else if (lowerSheet.includes('feb')) sheetMonth = 1
+            else if (lowerSheet.includes('mar')) sheetMonth = 2
+            else if (lowerSheet.includes('apr')) sheetMonth = 3
+            else if (lowerSheet.includes('may')) sheetMonth = 4
+            else if (lowerSheet.includes('june') || lowerSheet.includes('jun')) sheetMonth = 5
+            else if (lowerSheet.includes('july') || lowerSheet.includes('jul')) sheetMonth = 6
+            else if (lowerSheet.includes('aug')) sheetMonth = 7
+            else if (lowerSheet.includes('sep') || lowerSheet.includes('tracker 9')) sheetMonth = 8
+            else if (lowerSheet.includes('oct') || lowerSheet.includes('tracker 10')) sheetMonth = 9
+            else if (lowerSheet.includes('nov') || lowerSheet.includes('tracker 11')) sheetMonth = 10
+            else if (lowerSheet.includes('dec') || lowerSheet.includes('tracker 12')) sheetMonth = 11
+
+            const defaultSheetDateStr = format(new Date(sheetYear, sheetMonth, 1), 'yyyy-MM-dd')
+
             // Dual column Cash Book parser
             const parseExcelDate = (val) => {
-              if (!val) return null
+              if (val === null || val === undefined || val === '') return null
               if (typeof val === 'number') {
-                const date = new Date((val - 25569) * 86400 * 1000)
-                try { return format(date, 'yyyy-MM-dd') } catch (_) { return null }
+                const date = new Date(Math.round((val - 25569) * 86400 * 1000))
+                const utcYear = date.getUTCFullYear()
+                const utcMonth = date.getUTCMonth()
+                const utcDay = date.getUTCDate()
+                try { return format(new Date(utcYear, utcMonth, utcDay), 'yyyy-MM-dd') } catch (_) { return null }
               }
               try {
-                const parsed = new Date(val)
+                const str = String(val).trim()
+                const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
+                if (match) {
+                  let d = parseInt(match[1], 10)
+                  let m = parseInt(match[2], 10) - 1
+                  let y = parseInt(match[3], 10)
+                  if (y < 100) y += 2000
+                  return format(new Date(y, m, d), 'yyyy-MM-dd')
+                }
+                const parsed = new Date(str)
                 if (!isNaN(parsed.getTime())) return format(parsed, 'yyyy-MM-dd')
               } catch (_) {}
               return null
             }
-            const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+            let lastReceiptDate = defaultSheetDateStr
+            let lastPaymentDate = defaultSheetDateStr
 
             for (let i = headerIndex + 1; i < rawRows.length; i++) {
               const row = rawRows[i]
               if (!row || row.length === 0) continue
 
               // 1. Receipts (Income)
+              const rDateParsed = parseExcelDate(row[0])
+              if (rDateParsed) lastReceiptDate = rDateParsed
+
               const rAmount = Number(row[5]) || 0
               const rClient = String(row[1] || '').trim()
               const rParticulars = String(row[2] || '').trim()
@@ -273,7 +309,7 @@ export default function Sacco() {
 
               if (rAmount > 0 && !isBalBF) {
                 await addTransaction({
-                  date: parseExcelDate(row[0]) || todayStr,
+                  date: lastReceiptDate,
                   type: 'Income',
                   source: 'Petty Cash',
                   category: 'Petty Cash Receipt',
@@ -286,6 +322,9 @@ export default function Sacco() {
               }
 
               // 2. Payments (Expenses)
+              const pDateParsed = parseExcelDate(row[8])
+              if (pDateParsed) lastPaymentDate = pDateParsed
+
               const pAmount = Number(row[11]) || 0
               const pRecipient = String(row[9] || '').trim()
               const pParticulars = String(row[10] || '').trim()
@@ -297,7 +336,7 @@ export default function Sacco() {
               if (pAmount > 0 && !isPBalBF) {
                 const pSource = String(row[12] || '').toLowerCase() === 'bank' ? 'Bank' : 'Petty Cash'
                 await addTransaction({
-                  date: parseExcelDate(row[8]) || todayStr,
+                  date: lastPaymentDate,
                   type: 'Expense',
                   source: pSource,
                   category: pParticulars || 'General Expense',

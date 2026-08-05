@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   useEffect(() => {
@@ -14,7 +15,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
 
   const sizeMap = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-5xl' }
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -44,6 +45,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

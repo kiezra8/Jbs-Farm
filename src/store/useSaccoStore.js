@@ -338,9 +338,21 @@ export const useSaccoStore = create((set, get) => ({
   },
 
   updateMember: async (id, data, financialYear = '2026') => {
-    const categoryArray = Array.isArray(data.category) ? data.category : [data.category || 'Saving Member']
-    const updatedData = { ...data, category: categoryArray }
+    let categoryArray = Array.isArray(data.category) ? [...data.category] : [data.category || 'Saving Member']
     
+    // Preserve any existing investor configuration types so biodata updates do not revert them
+    const existingInv = get().investors.find(i => i.memberId === id) || await db.saccoInvestors.where('memberId').equals(id).first()
+    const isInvestor = categoryArray.some(c => ['Investor', 'Money Maker', 'New Farmer'].includes(c))
+    if (isInvestor) {
+      if (!categoryArray.includes('Investor')) categoryArray.push('Investor')
+      const invType = existingInv?.investorType || 'Money Maker'
+      if (!categoryArray.includes(invType)) categoryArray.push(invType)
+      
+      const otherType = invType === 'Money Maker' ? 'New Farmer' : 'Money Maker'
+      categoryArray = categoryArray.filter(c => c !== otherType && c !== 'Phase 3')
+    }
+
+    const updatedData = { ...data, category: categoryArray }
     await db.saccoMembers.update(id, updatedData)
     
     // Update or create yearly data
@@ -369,8 +381,6 @@ export const useSaccoStore = create((set, get) => ({
       })
     }
     
-    // Handle investor record initialization/deletion if category changes
-    const existingInv = get().investors.find(i => i.memberId === id)
     if (categoryArray.includes('Investor') && !existingInv) {
       const invId = crypto.randomUUID()
       await db.saccoInvestors.add({
