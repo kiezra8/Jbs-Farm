@@ -673,6 +673,7 @@ export default function Finance() {
                 <ChevronRight size={15} />
               </button>
             </div>
+            </div>
           </div>
 
           {/* Month pill tabs */}

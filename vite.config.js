@@ -36,5 +36,29 @@ export default defineConfig({
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') }
+  },
+  optimizeDeps: {
+    include: [
+      'firebase/app',
+      'firebase/firestore',
+      'firebase/auth',
+      'firebase/storage'
+    ]
+  },
+  build: {
+    commonjsOptions: {
+      transformMixedEsModules: true
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: ['firebase/app', 'firebase/firestore'],
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          xlsx: ['xlsx']
+        }
+      }
+    }
   }
 })
+
