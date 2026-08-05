@@ -68,16 +68,12 @@ export const useFinanceStore = create((set, get) => ({
   },
 
   clearAllTransactions: async () => {
-    const all = await db.finances.toArray()
     await db.finances.clear()
     set({ transactions: [] })
-    // Also delete each from Supabase
-    for (const tx of all) {
-      try {
-        const { deleteSaccoRecord } = await import('../services/supabaseSyncEngine')
-        await deleteSaccoRecord('finances', tx.id)
-      } catch (_) {}
-    }
+    try {
+      const { clearSaccoTable } = await import('../services/supabaseSyncEngine')
+      await clearSaccoTable('finances')
+    } catch (_) {}
   },
 
   getMonthlyStats: (date = new Date()) => {

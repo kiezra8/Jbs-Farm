@@ -214,6 +214,22 @@ export async function deleteSaccoRecord(dexieTable, id) {
   }
 }
 
+// ─── Clear an entire Sacco table in Supabase ─────────────────────────────
+export async function clearSaccoTable(dexieTable) {
+  const sbTable = TABLE_MAP[dexieTable]
+  if (!sbTable) return
+
+  try {
+    const { error } = await supabase.from(sbTable).delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (error) {
+      await supabase.from(sbTable).delete().not('id', 'is', null)
+    }
+    console.log(`✅ Cleared all rows from Supabase table [${sbTable}]`)
+  } catch (e) {
+    console.warn(`clearSaccoTable error (${sbTable}):`, e)
+  }
+}
+
 // ─── Setup Supabase Realtime listeners for all Sacco tables ─────────────────
 export function initSupabaseSaccoSync() {
   // Tear down any old channels first
