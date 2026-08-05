@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { Lock } from 'lucide-react'
 
 export default function PinGuard({ children }) {
-  const [isUnlocked, setIsUnlocked] = useState(() => {
-    return sessionStorage.getItem('saccoUnlocked') === 'true' || sessionStorage.getItem('financeUnlocked') === 'true'
-  })
+  const [isUnlocked, setIsUnlocked] = useState(true)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
 

@@ -102,7 +102,7 @@ export default function Sacco() {
   const investorExcelInputRef = useRef(null)
   const expenseExcelInputRef = useRef(null)
 
-  const [isUnlocked, setIsUnlocked] = useState(() => sessionStorage.getItem('saccoUnlocked') === 'true')
+  const [isUnlocked, setIsUnlocked] = useState(true)
   const [pinInput, setPinInput] = useState('')
 
   useEffect(() => {
