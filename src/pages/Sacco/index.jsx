@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download, Printer } from 'lucide-react'
+import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download, Printer, FileText, FileSpreadsheet } from 'lucide-react'
 import { useSaccoStore } from '../../store/useSaccoStore'
 import DataTable from '../../components/ui/DataTable'
 import Modal from '../../components/ui/Modal'
@@ -10,7 +10,8 @@ import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 import MemberDetailsModal from './MemberDetailsModal'
 import Finance from '../Finance'
-import { forceUploadAllLocalData, forceUploadSaccoData } from '../../services/syncEngine'
+import { forceUploadSaccoToSupabase } from '../../services/supabaseSyncEngine'
+import { exportToPDF, exportToExcel } from '../../utils/exporters'
 
 export default function Sacco() {
   const { 
@@ -138,7 +139,7 @@ export default function Sacco() {
         const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
         await useSaccoStore.getState().importInvestmentExcel(data)
         // Auto-push to cloud so all devices see the same data
-        try { await forceUploadAllLocalData() } catch (_) {}
+        try { await forceUploadSaccoToSupabase() } catch (_) {}
         alert('Investment Excel imported and synced to cloud successfully!')
       } catch (err) {
         console.error(err)
@@ -186,7 +187,7 @@ export default function Sacco() {
 
         if (totalImported > 0) {
           // Auto-push to cloud so all devices see the same data immediately
-          try { await forceUploadAllLocalData() } catch (_) {}
+          try { await forceUploadSaccoToSupabase() } catch (_) {}
           alert(`Successfully imported ${totalImported} SACCO records and synced to cloud!\n\nAll devices will now see the updated data.`)
         } else {
           // Fall back to single-sheet mode for custom files
@@ -195,7 +196,7 @@ export default function Sacco() {
           const data = XLSX.utils.sheet_to_json(ws)
           if (data.length > 0) {
             await importFromExcel(data, selectedYear, wsname)
-            try { await forceUploadAllLocalData() } catch (_) {}
+            try { await forceUploadSaccoToSupabase() } catch (_) {}
             alert(`Successfully imported ${data.length} SACCO records and synced to cloud!`)
           } else {
             alert('Excel file is empty.')
@@ -370,7 +371,7 @@ export default function Sacco() {
           }
         }
         
-        try { await forceUploadAllLocalData() } catch (_) {}
+        try { await forceUploadSaccoToSupabase() } catch (_) {}
         alert(`Successfully imported ${importedCount} transactions and synced to cloud!`)
       } catch (err) {
         console.error('Import failed:', err)
@@ -381,13 +382,230 @@ export default function Sacco() {
     reader.readAsBinaryString(file)
   }
 
-  // ─── Excel Export handler ───────────────────────────────────────────────
+  // ─── Export Handlers for All Sacco Modules ───────────────────────────────
   const handleExcelExport = () => {
     const rows = useSaccoStore.getState().exportToExcel()
     const ws = XLSX.utils.json_to_sheet(rows, { skipHeader: true })
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'SACCO Members')
     XLSX.writeFile(wb, `SACCO_Members_Export_${format(new Date(), 'yyyy-MM-dd')}.xlsx`)
+  }
+
+  const handleMembersPdfExport = () => {
+    const columns = [
+      { key: 'name', header: 'Name' },
+      { key: 'categoryStr', header: 'Category' },
+      { key: 'noOfShares', header: 'Shares' },
+      { key: 'totalStr', header: 'Total Paid' },
+      { key: 'sharesStr', header: 'Shares Amt' },
+      { key: 'adminStr', header: 'Admin Fee' },
+      { key: 'savingsStr', header: 'Savings' },
+    ]
+    const rows = filteredMembers.map(m => ({
+      ...m,
+      categoryStr: Array.isArray(m.category) ? m.category.join(', ') : (m.category || 'Member'),
+      totalStr: formatUGX(m.total || 0),
+      sharesStr: formatUGX(m.shares || 0),
+      adminStr: formatUGX(m.admin || 0),
+      savingsStr: formatUGX(m.savings || 0),
+    }))
+    exportToPDF({ title: 'SACCO Members Register', columns, rows, filename: `SACCO_Members_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleSharesExcelExport = () => {
+    const columns = [
+      { key: 'name', header: 'Member Name' },
+      { key: 'categoryStr', header: 'Category' },
+      { key: 'shareCount', header: 'Shares Owned' },
+      { key: 'value', header: 'Total Value (UGX)' }
+    ]
+    const rows = sharesData.map(s => ({
+      ...s,
+      categoryStr: Array.isArray(s.category) ? s.category.join(', ') : s.category
+    }))
+    const totalSharesCount = sharesData.reduce((sum, s) => sum + (s.shareCount || 0), 0)
+    rows.push({
+      name: 'TOTAL',
+      categoryStr: '',
+      shareCount: totalSharesCount,
+      value: totalSharesCount * 100000
+    })
+    exportToExcel({ title: 'SACCO Shares Register', columns, rows, filename: `SACCO_Shares_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleSharesPdfExport = () => {
+    const columns = [
+      { key: 'name', header: 'Member Name' },
+      { key: 'categoryStr', header: 'Category' },
+      { key: 'shareCount', header: 'Shares Owned' },
+      { key: 'valueStr', header: 'Total Value' }
+    ]
+    const rows = sharesData.map(s => ({
+      ...s,
+      categoryStr: Array.isArray(s.category) ? s.category.join(', ') : s.category,
+      valueStr: formatUGX(s.value)
+    }))
+    const totalSharesCount = sharesData.reduce((sum, s) => sum + (s.shareCount || 0), 0)
+    rows.push({
+      name: 'TOTAL',
+      categoryStr: '',
+      shareCount: totalSharesCount,
+      valueStr: formatUGX(totalSharesCount * 100000)
+    })
+    exportToPDF({ title: 'SACCO Shares Register', columns, rows, filename: `SACCO_Shares_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleSavingsExcelExport = () => {
+    const columns = [
+      { key: 'name', header: 'Member Name' },
+      { key: 'categoryStr', header: 'Category' },
+      { key: 'jan', header: 'Jan' },
+      { key: 'feb', header: 'Feb' },
+      { key: 'mar', header: 'Mar' },
+      { key: 'apr', header: 'Apr' },
+      { key: 'may', header: 'May' },
+      { key: 'jun', header: 'Jun' },
+      { key: 'jul', header: 'Jul' },
+      { key: 'aug', header: 'Aug' },
+      { key: 'sep', header: 'Sep' },
+      { key: 'oct', header: 'Oct' },
+      { key: 'nov', header: 'Nov' },
+      { key: 'dec', header: 'Dec' },
+      { key: 'savingAmount', header: 'Savings Balance (UGX)' }
+    ]
+    const rows = savingsData.map(s => ({
+      ...s,
+      categoryStr: Array.isArray(s.category) ? s.category.join(', ') : s.category
+    }))
+    const totalSavingsBal = savingsData.reduce((sum, s) => sum + (s.savingAmount || 0), 0)
+    rows.push({
+      name: 'TOTAL',
+      categoryStr: '',
+      jan: '', feb: '', mar: '', apr: '', may: '', jun: '', jul: '', aug: '', sep: '', oct: '', nov: '', dec: '',
+      savingAmount: totalSavingsBal
+    })
+    exportToExcel({ title: `SACCO Savings Register (${selectedYear})`, columns, rows, filename: `SACCO_Savings_${selectedYear}_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleSavingsPdfExport = () => {
+    const columns = [
+      { key: 'name', header: 'Member Name' },
+      { key: 'categoryStr', header: 'Category' },
+      { key: 'savingAmountStr', header: 'Savings Balance' }
+    ]
+    const rows = savingsData.map(s => ({
+      ...s,
+      categoryStr: Array.isArray(s.category) ? s.category.join(', ') : s.category,
+      savingAmountStr: formatUGX(s.savingAmount || 0)
+    }))
+    const totalSavingsBal = savingsData.reduce((sum, s) => sum + (s.savingAmount || 0), 0)
+    rows.push({
+      name: 'TOTAL',
+      categoryStr: '',
+      savingAmountStr: formatUGX(totalSavingsBal)
+    })
+    exportToPDF({ title: `SACCO Savings Register (${selectedYear})`, columns, rows, filename: `SACCO_Savings_${selectedYear}_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleInvestorsExcelExport = () => {
+    const columns = [
+      { key: 'name', header: 'Investor Name' },
+      { key: 'investorType', header: 'Type' },
+      { key: 'investmentPhase', header: 'Phase' },
+      { key: 'pairing', header: 'Pairing' },
+      { key: 'programAmount', header: 'Program Target (UGX)' },
+      { key: 'investmentAmount', header: 'Paid (UGX)' },
+      { key: 'balance', header: 'Balance (UGX)' },
+      { key: 'status', header: 'Status' }
+    ]
+    const rows = investorsData.map(i => {
+      const isPaired = !!i.pairedWith
+      const program = i.programAmount || (isPaired ? 4000000 : 8000000)
+      const paid = i.investmentAmount || 0
+      const cleared = i.status === 'CLEARED' || (paid >= program && program > 0)
+      const balance = cleared ? 0 : Math.max(0, program - paid)
+      return {
+        name: i.name,
+        investorType: i.investorType || i.category || 'Money Maker',
+        investmentPhase: i.investmentPhase || 'Phase 1',
+        pairing: isPaired ? `Paired with ${i.pairedWithName || 'Partner'}` : 'Alone',
+        programAmount: program,
+        investmentAmount: paid,
+        balance: balance,
+        status: i.marketingStrategy ? 'Marketing' : (cleared ? 'CLEARED' : 'PENDING')
+      }
+    })
+    exportToExcel({ title: 'SACCO Investors Register', columns, rows, filename: `SACCO_Investors_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleInvestorsPdfExport = () => {
+    const columns = [
+      { key: 'name', header: 'Investor Name' },
+      { key: 'investorType', header: 'Type' },
+      { key: 'investmentPhase', header: 'Phase' },
+      { key: 'pairing', header: 'Pairing' },
+      { key: 'programStr', header: 'Program Target' },
+      { key: 'paidStr', header: 'Paid' },
+      { key: 'balanceStr', header: 'Balance' },
+      { key: 'status', header: 'Status' }
+    ]
+    const rows = investorsData.map(i => {
+      const isPaired = !!i.pairedWith
+      const program = i.programAmount || (isPaired ? 4000000 : 8000000)
+      const paid = i.investmentAmount || 0
+      const cleared = i.status === 'CLEARED' || (paid >= program && program > 0)
+      const balance = cleared ? 0 : Math.max(0, program - paid)
+      return {
+        name: i.name,
+        investorType: i.investorType || i.category || 'Money Maker',
+        investmentPhase: i.investmentPhase || 'Phase 1',
+        pairing: isPaired ? `Paired (${i.pairedWithName || ''})` : 'Alone',
+        programStr: formatUGX(program),
+        paidStr: formatUGX(paid),
+        balanceStr: cleared ? 'Nill' : formatUGX(balance),
+        status: i.marketingStrategy ? 'Marketing' : (cleared ? 'CLEARED' : 'PENDING')
+      }
+    })
+    exportToPDF({ title: 'SACCO Investors Register', columns, rows, filename: `SACCO_Investors_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleAccountsExcelExport = () => {
+    const columns = [
+      { key: 'date', header: 'Date' },
+      { key: 'memberName', header: 'Person' },
+      { key: 'type', header: 'Type' },
+      { key: 'category', header: 'Category' },
+      { key: 'paymentMethod', header: 'Method' },
+      { key: 'isBankedStr', header: 'Banked Status' },
+      { key: 'amount', header: 'Amount (UGX)' },
+      { key: 'description', header: 'Description' }
+    ]
+    const rows = txData.map(t => ({
+      ...t,
+      memberName: t.memberName || '—',
+      isBankedStr: t.isBanked ? 'Banked' : 'Not Banked',
+      description: t.description || '—'
+    }))
+    exportToExcel({ title: 'SACCO Accounts Ledger', columns, rows, filename: `SACCO_Accounts_Ledger_${format(new Date(), 'yyyyMMdd')}` })
+  }
+
+  const handleAccountsPdfExport = () => {
+    const columns = [
+      { key: 'date', header: 'Date' },
+      { key: 'memberName', header: 'Person' },
+      { key: 'type', header: 'Type' },
+      { key: 'category', header: 'Category' },
+      { key: 'paymentMethod', header: 'Method' },
+      { key: 'amountStr', header: 'Amount' },
+      { key: 'description', header: 'Description' }
+    ]
+    const rows = txData.map(t => ({
+      ...t,
+      memberName: t.memberName || '—',
+      amountStr: `${t.type === 'Expense' ? '-' : '+'}${formatUGX(t.amount || 0)}`,
+      description: t.description || '—'
+    }))
+    exportToPDF({ title: 'SACCO Accounts Ledger', columns, rows, filename: `SACCO_Accounts_Ledger_${format(new Date(), 'yyyyMMdd')}` })
   }
 
   // ─── Save Handlers ─────────────────────────────────────────────────────────────────────
@@ -945,150 +1163,120 @@ export default function Sacco() {
           </div>
         </div>
 
-        {/* Universal Print Button — visible on all tabs */}
-        <div className="flex items-center gap-2 print:hidden">
+        {/* Dynamic header buttons per active tab */}
+        <div className="flex gap-2 w-full sm:w-auto flex-wrap print:hidden">
+          {activeTab === 'members' && (
+            <>
+              <input type="file" ref={excelInputRef} onChange={handleExcelImport} accept=".xlsx,.xls,.csv" className="hidden" />
+              <button onClick={() => excelInputRef.current.click()} className="btn-secondary text-white flex items-center gap-1.5 py-1.5 px-3 text-xs">
+                <Upload size={14} /> Import Excel
+              </button>
+              <button onClick={handleExcelExport} className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Members to Excel">
+                <FileSpreadsheet size={14} /> Export Excel
+              </button>
+              <button onClick={handleMembersPdfExport} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Members to PDF">
+                <FileText size={14} /> Export PDF
+              </button>
+              <button onClick={() => { setEditingMember(null); setMemberForm(initialMemberForm); setIsMemberModalOpen(true) }} className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5">
+                <Plus size={14} /> Add Member
+              </button>
+            </>
+          )}
+
+          {activeTab === 'shares' && (
+            <>
+              <button onClick={handleSharesExcelExport} className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Shares to Excel">
+                <FileSpreadsheet size={14} /> Export Excel
+              </button>
+              <button onClick={handleSharesPdfExport} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Shares to PDF">
+                <FileText size={14} /> Export PDF
+              </button>
+            </>
+          )}
+
+          {activeTab === 'savings' && (
+            <>
+              <button onClick={handleSavingsExcelExport} className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Savings to Excel">
+                <FileSpreadsheet size={14} /> Export Excel
+              </button>
+              <button onClick={handleSavingsPdfExport} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Savings to PDF">
+                <FileText size={14} /> Export PDF
+              </button>
+            </>
+          )}
+
+          {activeTab === 'investors' && (
+            <>
+              <input type="file" ref={investorExcelInputRef} onChange={handleInvestmentExcelImport} accept=".xlsx,.xls,.csv" className="hidden" />
+              <button onClick={() => investorExcelInputRef.current.click()} className="btn-secondary text-indigo-400 border border-indigo-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs">
+                <Upload size={14} /> Import Investment Excel
+              </button>
+              <button onClick={handleInvestorsExcelExport} className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Investors to Excel">
+                <FileSpreadsheet size={14} /> Export Excel
+              </button>
+              <button onClick={handleInvestorsPdfExport} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Investors to PDF">
+                <FileText size={14} /> Export PDF
+              </button>
+              <button onClick={async () => { if (window.confirm('WARNING: Delete all Phase 3 general investors?')) { await useSaccoStore.getState().clearPhase3Investors(); alert('Cleared.') } }} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs">
+                <Trash2 size={14} /> Clear General
+              </button>
+            </>
+          )}
+
+          {activeTab === 'accounts' && (
+            <>
+              <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExpenseExcelImport} ref={expenseExcelInputRef} className="hidden" />
+              <button onClick={() => expenseExcelInputRef.current.click()} className="btn-secondary text-indigo-400 flex items-center gap-1.5 py-1.5 px-3 text-xs">
+                <Upload size={14} /> Import Expenses
+              </button>
+              <button onClick={handleAccountsExcelExport} className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Accounts Ledger to Excel">
+                <FileSpreadsheet size={14} /> Export Excel
+              </button>
+              <button onClick={handleAccountsPdfExport} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Export Accounts Ledger to PDF">
+                <FileText size={14} /> Export PDF
+              </button>
+              <button onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5">
+                <Plus size={14} /> Add Transaction
+              </button>
+              <button onClick={async () => { if (window.confirm('WARNING: Wipe all SACCO data?')) { await useSaccoStore.getState().clearDatabase(); window.location.reload() } }} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs">
+                <Trash2 size={14} /> Clear DB
+              </button>
+            </>
+          )}
+
+          {/* Sync to Cloud button available across all SACCO tabs */}
+          {activeTab !== 'finance' && (
+            <button
+              onClick={async () => {
+                if (window.confirm('Sync all SACCO & Petty Cash data to Cloud now?')) {
+                  try {
+                    const count = await forceUploadSaccoToSupabase()
+                    alert(`✅ Successfully synced ${count} SACCO & Petty Cash records to Supabase!\nAll devices are updated.`)
+                  } catch (e) {
+                    alert('❌ Sync failed: ' + e.message)
+                  }
+                }
+              }}
+              className="btn-secondary text-cyan-400 border border-cyan-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs"
+              title="Push all local SACCO & Petty Cash data to cloud"
+            >
+              <Upload size={14} /> Sync to Cloud
+            </button>
+          )}
+
+          {/* Print Button */}
           <button
             onClick={() => {
               const tabLabels = { members: 'Members', shares: 'Shares', savings: 'Savings', investors: 'Investors', accounts: 'Accounts Ledger', finance: 'Farm Finance' }
               document.body.setAttribute('data-print-title', tabLabels[activeTab] || 'SACCO')
               window.print()
             }}
-            className="btn-secondary flex items-center gap-2 text-slate-300 hover:text-white border-white/10 hover:bg-white/5"
+            className="btn-secondary text-slate-300 hover:text-white border-white/10 flex items-center gap-1.5 py-1.5 px-3 text-xs"
             title="Print current view"
           >
-            <Printer size={16} /> Print
+            <Printer size={14} /> Print
           </button>
         </div>
-
-        {/* Seed Data loading removed */}        {activeTab === 'investors' && (
-          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
-            <input 
-              type="file" 
-              ref={investorExcelInputRef} 
-              onChange={handleInvestmentExcelImport} 
-              accept=".xlsx,.xls,.csv" 
-              className="hidden" 
-            />
-            <button 
-              onClick={() => investorExcelInputRef.current.click()} 
-              className="btn-secondary text-indigo-400 border border-indigo-500/30 flex items-center gap-2"
-            >
-              <Upload size={16} /> Import Investment Excel
-            </button>
-            <button 
-              onClick={async () => {
-                if (window.confirm('WARNING: This will delete all investors imported from the general excel (Phase 3). Are you sure?')) {
-                  await useSaccoStore.getState().clearPhase3Investors()
-                  alert('General investors cleared.')
-                }
-              }} 
-              className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-2"
-            >
-              <Trash2 size={16} /> Clear General Investors
-            </button>
-          </div>
-        )}
-
-        {/* Dynamic header button based on active tab */}
-        {activeTab === 'members' && (
-          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
-            <input 
-              type="file" 
-              ref={excelInputRef} 
-              onChange={handleExcelImport} 
-              accept=".xlsx,.xls,.csv" 
-              className="hidden" 
-            />
-            <button 
-              onClick={async () => {
-                if (window.confirm('This will instantly push your Sacco data to the cloud so it appears on other devices. Proceed?')) {
-                  try {
-                    const { forceUploadSaccoToSupabase } = await import('../../services/supabaseSyncEngine')
-                    const count = await forceUploadSaccoToSupabase()
-                    if (count > 0) {
-                      alert(`✅ Successfully pushed ${count} Sacco records to Supabase!\nOther devices will now see the data.`)
-                    } else {
-                      alert('⚠️ Push completed but 0 records were sent.\n\nPossible causes:\n1. No local Sacco data found\n2. Supabase is blocking writes (check RLS policies)\n\nOpen browser console (F12) for error details.')
-                    }
-                  } catch (e) {
-                    alert('❌ Failed to push data: ' + e.message + '\n\nOpen browser console (F12) for full details.')
-                  }
-                }
-              }} 
-              className="btn-primary bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-2 shadow-lg shadow-indigo-500/20"
-            >
-              <Upload size={16} /> Push to Cloud
-            </button>
-            <button 
-              onClick={() => excelInputRef.current.click()} 
-              className="btn-secondary text-white flex items-center gap-2"
-            >
-              <Upload size={16} /> Import Excel
-            </button>
-            <button 
-              onClick={handleExcelExport} 
-              className="btn-secondary text-emerald-400 border border-emerald-500/30 flex items-center gap-2"
-            >
-              <Download size={16} /> Export Excel
-            </button>
-            <button 
-              onClick={() => { setEditingMember(null); setMemberForm(initialMemberForm); setIsMemberModalOpen(true) }} 
-              className="btn-primary flex items-center gap-2"
-            >
-              <Plus size={16} /> Add Member
-            </button>
-          </div>
-        )}
-        {activeTab === 'accounts' && (
-          <div className="flex gap-2 w-full sm:w-auto flex-wrap">
-            <button 
-              onClick={async () => {
-                if (window.confirm('WARNING: This will completely wipe all SACCO data (Members, Shares, Savings, Investors, Transactions). Are you sure?')) {
-                  await useSaccoStore.getState().clearDatabase()
-                  window.location.reload()
-                }
-              }} 
-              className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-2"
-            >
-              <Trash2 size={16} /> Clear Database
-            </button>
-            <button 
-              onClick={async () => {
-                if (window.confirm('This will push ALL local SACCO data (members, shares, savings, investors) to the cloud. Proceed?')) {
-                  try {
-                    const { forceUploadSaccoToSupabase } = await import('../../services/supabaseSyncEngine')
-                    await forceUploadSaccoToSupabase()
-                    alert('✅ All local data has been uploaded to the cloud! Hard refresh on other devices.')
-                  } catch (e) {
-                    alert('❌ Upload failed: ' + e.message)
-                  }
-                }
-              }} 
-              className="btn-secondary text-blue-400 border border-blue-500/30 flex items-center gap-2"
-            >
-              <Upload size={16} /> Force Sync to Cloud
-            </button>
-            <input 
-              type="file" 
-              accept=".xlsx, .xls, .csv" 
-              onChange={handleExpenseExcelImport} 
-              ref={expenseExcelInputRef} 
-              className="hidden" 
-            />
-            <button 
-              onClick={() => expenseExcelInputRef.current.click()} 
-              className="btn-secondary text-indigo-400 flex items-center gap-2"
-            >
-              <Upload size={16} /> Import Expenses
-            </button>
-            <button 
-              onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} 
-              className="btn-primary flex items-center gap-2"
-            >
-              <Plus size={16} /> Add Transaction
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Accounts mini summary cards shown on accounts tab */}

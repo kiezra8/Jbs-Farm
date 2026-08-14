@@ -146,7 +146,7 @@ export async function fetchAllFromFirebase() {
               } else if (ANIMAL_TABLES.has(dexieTable)) {
                 scheduleReload(animalT, 400, getAnimalStore, 'loadAnimals')
               } else if (FINANCE_TABLES.has(dexieTable)) {
-                scheduleReload(financeT, 400, getFinanceStore, 'loadFinances')
+                scheduleReload(financeT, 400, getFinanceStore, 'loadTransactions')
               } else if (STAFF_TABLES.has(dexieTable)) {
                 scheduleReload(staffT, 400, getStaffStore, 'loadStaff')
               }
