@@ -35,7 +35,7 @@ export function initFirebase() {
 export function getFirestoreDb() { return firestore }
 
 // All tables that get synced via Firebase — Dexie name : Firebase collection name
-// NOTE: Sacco tables are intentionally excluded — they sync via Supabase instead
+// NOTE: Sacco & Finance tables are intentionally excluded — they sync via Supabase instead
 const SYNC_TABLES = {
   animals:          'animals',
   healthRecords:    'healthRecords',
@@ -43,13 +43,12 @@ const SYNC_TABLES = {
   milkRecords:      'milkRecords',
   feedInventory:    'feedInventory',
   feedTransactions: 'feedTransactions',
-  finances:         'finances',
   staff:            'staff',
   attendance:       'attendance',
   tasks:            'tasks',
   notifications:    'notifications',
   // saccoMembers, saccoShares, saccoInvestors, saccoTransactions,
-  // saccoSavings, saccoYearlySavings  ← handled by supabaseSyncEngine.js
+  // saccoSavings, saccoYearlySavings, finances ← handled by supabaseSyncEngine.js
 }
 
 import { onSnapshot } from 'firebase/firestore'

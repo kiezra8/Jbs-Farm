@@ -205,7 +205,6 @@ export default function Animals() {
             <p className="text-slate-400">{selectedAnimal.name} • {selectedAnimal.breed}</p>
             <div className="mt-8 flex gap-3 w-full">
               <button className="btn-secondary flex-1 justify-center" onClick={() => setIsQRModalOpen(false)}>Close</button>
-              <button className="btn-primary flex-1 justify-center">Print Label</button>
             </div>
           </div>
         )}

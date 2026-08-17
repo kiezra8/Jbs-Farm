@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, Printer, ChevronLeft, ChevronRight, Calendar, BarChart2 } from 'lucide-react'
+import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar, BarChart2 } from 'lucide-react'
 import { useMilkStore } from '../../store/useMilkStore'
 import { useAnimalStore } from '../../store/useAnimalStore'
 import DataTable from '../../components/ui/DataTable'
@@ -544,13 +544,6 @@ export default function Milk() {
                   title="Export Weekly Excel"
                 >
                   <FileSpreadsheet size={14} className="text-green-400" /> Excel
-                </button>
-                <button
-                  onClick={handleWeeklyPrint}
-                  className="btn-secondary text-xs flex items-center gap-1.5 py-1.5 px-3"
-                  title="Print Weekly Report"
-                >
-                  <Printer size={14} /> Print
                 </button>
               </div>
             </div>

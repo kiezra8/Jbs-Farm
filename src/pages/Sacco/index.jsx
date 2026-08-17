@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download, Printer, FileText, FileSpreadsheet } from 'lucide-react'
+import { Plus, Search, Filter, Upload, Edit2, Trash2, Building2, Users, Coins, TrendingUp, Wallet, PiggyBank, DollarSign, Download, FileText, FileSpreadsheet } from 'lucide-react'
 import { useSaccoStore } from '../../store/useSaccoStore'
 import DataTable from '../../components/ui/DataTable'
 import Modal from '../../components/ui/Modal'
@@ -1263,19 +1263,6 @@ export default function Sacco() {
               <Upload size={14} /> Sync to Cloud
             </button>
           )}
-
-          {/* Print Button */}
-          <button
-            onClick={() => {
-              const tabLabels = { members: 'Members', shares: 'Shares', savings: 'Savings', investors: 'Investors', accounts: 'Accounts Ledger', finance: 'Farm Finance' }
-              document.body.setAttribute('data-print-title', tabLabels[activeTab] || 'SACCO')
-              window.print()
-            }}
-            className="btn-secondary text-slate-300 hover:text-white border-white/10 flex items-center gap-1.5 py-1.5 px-3 text-xs"
-            title="Print current view"
-          >
-            <Printer size={14} /> Print
-          </button>
         </div>
       </div>
 

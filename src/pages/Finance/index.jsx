@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { Plus, Edit2, Trash2, Printer, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar, CloudUpload } from 'lucide-react'
+import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar, CloudUpload } from 'lucide-react'
 import { useFinanceStore } from '../../store/useFinanceStore'
 import { useMilkStore } from '../../store/useMilkStore'
 import DataTable from '../../components/ui/DataTable'
@@ -656,9 +656,6 @@ export default function Finance() {
             </button>
             <button onClick={handleExportPDF} className="btn-secondary text-xs flex items-center gap-1.5 py-1.5 px-3" title="Export to PDF">
               <FileText size={14} /> Export PDF
-            </button>
-            <button onClick={handlePrint} className="btn-secondary text-xs flex items-center gap-1.5 py-1.5 px-3" title="Print Ledger">
-              <Printer size={14} /> Print
             </button>
             <button className="btn-primary text-xs flex items-center gap-1.5 py-1.5 px-3" onClick={() => setIsModalOpen(true)}>
               <Plus size={14} /> Add Transaction
