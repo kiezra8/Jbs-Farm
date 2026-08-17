@@ -79,6 +79,7 @@ export const useSaccoStore = create((set, get) => ({
 
   clearDatabase: async () => {
     set({ loading: true })
+    // Clear local IndexedDB (never touches finances / petty cash)
     await Promise.all([
       db.saccoMembers.clear(),
       db.saccoShares.clear(),
@@ -88,6 +89,20 @@ export const useSaccoStore = create((set, get) => ({
       db.saccoYearlySavings.clear()
     ])
     set({ members: [], shares: [], investors: [], transactions: [], savings: [], yearlySavings: [], loading: false })
+    // Also clear in Supabase so all devices see the deletion (finances/petty cash table excluded)
+    try {
+      const { clearSaccoTable } = await import('../services/supabaseSyncEngine')
+      await Promise.all([
+        clearSaccoTable('saccoMembers'),
+        clearSaccoTable('saccoShares'),
+        clearSaccoTable('saccoInvestors'),
+        clearSaccoTable('saccoTransactions'),
+        clearSaccoTable('saccoSavings'),
+        clearSaccoTable('saccoYearlySavings')
+      ])
+    } catch (e) {
+      console.warn('Supabase clear failed:', e)
+    }
   },
 
   clearPhase3Investors: async () => {
@@ -303,20 +318,24 @@ export const useSaccoStore = create((set, get) => ({
     const record = { ...member, category: categoryArray, id, createdAt: now }
     
     await db.saccoMembers.add(record)
+    pushRecordToSupabase('saccoMembers', record)
     
     // Create initial shares record - MINIMUM 1 share
     const shareId = crypto.randomUUID()
     const shareRecord = { id: shareId, memberId: id, shareCount: member.noOfShares || 1, createdAt: now }
     await db.saccoShares.add(shareRecord)
+    pushRecordToSupabase('saccoShares', shareRecord)
 
     // Create initial savings record
     const savingId = crypto.randomUUID()
     const savingRecord = { id: savingId, memberId: id, savingAmount: member.total || 0, updatedAt: now }
     await db.saccoSavings.add(savingRecord)
+    pushRecordToSupabase('saccoSavings', savingRecord)
 
     // Save yearly data for the selected financial year
-    await db.saccoYearlySavings.add({
-      id: crypto.randomUUID(),
+    const yearlyId = crypto.randomUUID()
+    const yearlyRecord = {
+      id: yearlyId,
       memberId: id,
       year: financialYear,
       jan: member.jan || 0, feb: member.feb || 0, mar: member.mar || 0,
@@ -325,7 +344,9 @@ export const useSaccoStore = create((set, get) => ({
       oct: member.oct || 0, nov: member.nov || 0, dec: member.dec || 0,
       total: member.total || 0,
       createdAt: now
-    })
+    }
+    await db.saccoYearlySavings.add(yearlyRecord)
+    pushRecordToSupabase('saccoYearlySavings', yearlyRecord)
 
     // If Category includes Investor, initialize Investor record
     if (categoryArray.includes('Investor')) {
@@ -346,6 +367,7 @@ export const useSaccoStore = create((set, get) => ({
         createdAt: now
       }
       await db.saccoInvestors.add(invRecord)
+      pushRecordToSupabase('saccoInvestors', invRecord)
     }
 
     await get().loadSaccoData()
@@ -427,18 +449,35 @@ export const useSaccoStore = create((set, get) => ({
 
   deleteMember: async (id) => {
     await db.saccoMembers.delete(id)
+    removeRecordFromSupabase('saccoMembers', id)
     
     // Delete related shares
     const share = get().shares.find(s => s.memberId === id)
-    if (share) await db.saccoShares.delete(share.id)
+    if (share) {
+      await db.saccoShares.delete(share.id)
+      removeRecordFromSupabase('saccoShares', share.id)
+    }
 
     // Delete related savings
     const saving = get().savings.find(s => s.memberId === id)
-    if (saving) await db.saccoSavings.delete(saving.id)
+    if (saving) {
+      await db.saccoSavings.delete(saving.id)
+      removeRecordFromSupabase('saccoSavings', saving.id)
+    }
 
     // Delete related investor info
     const inv = get().investors.find(i => i.memberId === id)
-    if (inv) await db.saccoInvestors.delete(inv.id)
+    if (inv) {
+      await db.saccoInvestors.delete(inv.id)
+      removeRecordFromSupabase('saccoInvestors', inv.id)
+    }
+
+    // Delete related yearly savings
+    const yearlySavingsToDelete = await db.saccoYearlySavings.where('memberId').equals(id).toArray()
+    for (const ys of yearlySavingsToDelete) {
+      await db.saccoYearlySavings.delete(ys.id)
+      removeRecordFromSupabase('saccoYearlySavings', ys.id)
+    }
 
     await get().loadSaccoData()
   },
@@ -1029,6 +1068,13 @@ export const useSaccoStore = create((set, get) => ({
       }
     }
 
+    // After importing all rows, push everything to Supabase so all devices see the new data
+    try {
+      const { forceUploadSaccoToSupabase } = await import('../services/supabaseSyncEngine')
+      await forceUploadSaccoToSupabase()
+    } catch (e) {
+      console.warn('Post-import Supabase sync failed:', e)
+    }
     await get().loadSaccoData()
   },
 

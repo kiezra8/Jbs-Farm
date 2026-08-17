@@ -1238,27 +1238,32 @@ export default function Sacco() {
               <button onClick={() => { setTxForm(initialTxForm); setIsTxModalOpen(true) }} className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5">
                 <Plus size={14} /> Add Transaction
               </button>
-              <button onClick={async () => { if (window.confirm('WARNING: Wipe all SACCO data?')) { await useSaccoStore.getState().clearDatabase(); window.location.reload() } }} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs">
-                <Trash2 size={14} /> Clear DB
+              <button onClick={async () => {
+                if (window.confirm('⚠️ WARNING: This will permanently delete ALL SACCO data (Members, Shares, Savings, Investors, Transactions) from ALL devices.\n\n✅ Petty Cash / Finance data will NOT be affected.\n\nAre you sure?')) {
+                  await useSaccoStore.getState().clearDatabase()
+                  window.location.reload()
+                }
+              }} className="btn-secondary text-red-400 border border-red-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs" title="Clear all SACCO data (petty cash excluded)">
+                <Trash2 size={14} /> Clear All SACCO
               </button>
             </>
           )}
 
-          {/* Sync to Cloud button available across all SACCO tabs */}
+          {/* Sync to Cloud button — available across all SACCO tabs */}
           {activeTab !== 'finance' && (
             <button
               onClick={async () => {
-                if (window.confirm('Sync all SACCO & Petty Cash data to Cloud now?')) {
+                if (window.confirm('Sync all SACCO data to Cloud now?\n\nThis will push all Members, Shares, Savings, Investors and Transactions to Supabase so every device can see the latest data.')) {
                   try {
                     const count = await forceUploadSaccoToSupabase()
-                    alert(`✅ Successfully synced ${count} SACCO & Petty Cash records to Supabase!\nAll devices are updated.`)
+                    alert(`✅ Successfully synced ${count} SACCO records to Supabase!\nAll devices are now updated.`)
                   } catch (e) {
                     alert('❌ Sync failed: ' + e.message)
                   }
                 }
               }}
               className="btn-secondary text-cyan-400 border border-cyan-500/30 flex items-center gap-1.5 py-1.5 px-3 text-xs"
-              title="Push all local SACCO & Petty Cash data to cloud"
+              title="Push all local SACCO data to cloud for all devices"
             >
               <Upload size={14} /> Sync to Cloud
             </button>
