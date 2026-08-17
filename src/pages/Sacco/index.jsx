@@ -65,6 +65,7 @@ export default function Sacco() {
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [investorTypeFilter, setInvestorTypeFilter] = useState('')
 
   // Form states
   const initialMemberForm = { 
@@ -805,17 +806,25 @@ export default function Sacco() {
     .filter(i => (Number(i.investmentAmount) || 0) > 0)
     .map(i => {
       const member = members.find(m => m.id === i.memberId)
+      const rawType = i.investorType || i.category || (Array.isArray(member?.category) && member.category.includes('New Farmer') ? 'New Farmer' : 'Money Maker')
+      const investorType = String(rawType).toUpperCase().includes('FARM') ? 'New Farmer' : 'Money Maker'
       return {
         ...i,
         name: member?.name || i.name || 'Unknown',
-        memberCategory: member?.category || i.category || 'Money Maker',
-        investorType: i.investorType || i.category || 'Money Maker'
+        memberCategory: member?.category || i.category || investorType,
+        investorType
       }
     })
 
+  const moneyMakersCount = detailedInvestors.filter(i => i.investorType !== 'New Farmer').length
+  const newFarmersCount = detailedInvestors.filter(i => i.investorType === 'New Farmer').length
+
   const investorsData = detailedInvestors.filter(i => {
     const matchesSearch = (i.name || '').toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
+    const matchesType = investorTypeFilter 
+      ? (investorTypeFilter === 'New Farmer' ? i.investorType === 'New Farmer' : i.investorType !== 'New Farmer') 
+      : true
+    return matchesSearch && matchesType
   })
   
   const phase3Count = investorsData.filter(i => i.investmentPhase === 'Phase 3').length
@@ -967,10 +976,14 @@ export default function Sacco() {
     }},
     { key: 'investorType', label: 'Type', render: (val, row) => {
       const rawType = val || row.category || 'Money Maker'
-      const type = rawType === 'New Farmer' ? 'New Farmer' : 'Money Maker'
+      const isNewFarmer = String(rawType).toUpperCase().includes('FARM')
       return (
-        <span className={`px-2 py-1 rounded-full text-[10px] font-medium ${type === 'Money Maker' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
-          {type}
+        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1.5 ${
+          isNewFarmer 
+            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' 
+            : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+        }`}>
+          {isNewFarmer ? '🌱 New Farmer' : '💰 Money Maker'}
         </span>
       )
     }},
@@ -1392,6 +1405,41 @@ export default function Sacco() {
                               isSelected ? 'bg-emerald-500/30 text-emerald-200' : 'bg-white/5 text-slate-400'
                             }`}>
                               {cat.count}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Dark Investor Type Navigation Pill Bar */}
+                  {activeTab === 'investors' && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
+                        <Filter size={12} className="text-purple-400" /> Type:
+                      </span>
+                      {[
+                        { id: '', label: 'All Investors', count: detailedInvestors.length },
+                        { id: 'Money Maker', label: '💰 Money Makers', count: moneyMakersCount },
+                        { id: 'New Farmer', label: '🌱 New Farmers', count: newFarmersCount },
+                      ].map(type => {
+                        const isSelected = investorTypeFilter === type.id
+                        return (
+                          <button
+                            key={type.id}
+                            type="button"
+                            onClick={() => setInvestorTypeFilter(type.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+                              isSelected
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/50 shadow-md shadow-purple-950/40'
+                                : 'bg-slate-900/90 text-slate-400 hover:text-white hover:bg-slate-800 border border-white/10'
+                            }`}
+                          >
+                            <span>{type.label}</span>
+                            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
+                              isSelected ? 'bg-purple-500/30 text-purple-200' : 'bg-white/5 text-slate-400'
+                            }`}>
+                              {type.count}
                             </span>
                           </button>
                         )
@@ -1912,25 +1960,25 @@ export default function Sacco() {
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Investor Type</label>
               <select 
-                className="input-field" 
+                className="input-field bg-slate-900 text-white" 
                 value={investorForm.investorType || investorForm.category} 
                 onChange={e => setInvestorForm({ ...investorForm, investorType: e.target.value, category: e.target.value })}
               >
-                <option value="Money Maker">Money Maker</option>
-                <option value="New Farmer">New Farmer</option>
+                <option value="Money Maker" className="bg-slate-900 text-white">💰 Money Maker</option>
+                <option value="New Farmer" className="bg-slate-900 text-white">🌱 New Farmer</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
               <select 
-                className="input-field" 
+                className="input-field bg-slate-900 text-white" 
                 value={investorForm.investmentPhase || 'Phase 1'} 
                 onChange={e => setInvestorForm({ ...investorForm, investmentPhase: e.target.value })}
               >
-                <option value="Phase 1">Phase 1</option>
-                <option value="Phase 2">Phase 2</option>
-                <option value="Phase 3">Phase 3</option>
+                <option value="Phase 1" className="bg-slate-900 text-white">Phase 1</option>
+                <option value="Phase 2" className="bg-slate-900 text-white">Phase 2</option>
+                <option value="Phase 3" className="bg-slate-900 text-white">Phase 3</option>
               </select>
             </div>
 

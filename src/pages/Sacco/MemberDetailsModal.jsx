@@ -497,17 +497,17 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Investor Type</label>
-                  <select className="input-field" value={investorData.investorType || investorData.category || 'Money Maker'} onChange={e => setInvestorData({...investorData, investorType: e.target.value, category: e.target.value})}>
-                    <option value="Money Maker">Money Maker</option>
-                    <option value="New Farmer">New Farmer</option>
+                  <select className="input-field bg-slate-900 text-white" value={investorData.investorType || investorData.category || 'Money Maker'} onChange={e => setInvestorData({...investorData, investorType: e.target.value, category: e.target.value})}>
+                    <option value="Money Maker" className="bg-slate-900 text-white">💰 Money Maker</option>
+                    <option value="New Farmer" className="bg-slate-900 text-white">🌱 New Farmer</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Investment Phase</label>
-                  <select className="input-field" value={investorData.investmentPhase || 'Phase 1'} onChange={e => setInvestorData({...investorData, investmentPhase: e.target.value})}>
-                    <option value="Phase 1">Phase 1</option>
-                    <option value="Phase 2">Phase 2</option>
-                    <option value="Phase 3">Phase 3</option>
+                  <select className="input-field bg-slate-900 text-white" value={investorData.investmentPhase || 'Phase 1'} onChange={e => setInvestorData({...investorData, investmentPhase: e.target.value})}>
+                    <option value="Phase 1" className="bg-slate-900 text-white">Phase 1</option>
+                    <option value="Phase 2" className="bg-slate-900 text-white">Phase 2</option>
+                    <option value="Phase 3" className="bg-slate-900 text-white">Phase 3</option>
                   </select>
                 </div>
                 <div className="col-span-2">

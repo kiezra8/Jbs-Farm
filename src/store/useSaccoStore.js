@@ -1214,17 +1214,43 @@ export const useSaccoStore = create((set, get) => ({
 
     const members = await db.saccoMembers.toArray()
     
-    // Skip empty rows and the header row
-    const actualData = data.filter(row => row['__EMPTY'] && row['__EMPTY'] !== 'NAMES')
+    // Skip empty rows and header rows
+    const actualData = data.filter(row => {
+      const firstCol = String(row['__EMPTY'] || row.Name || row.NAMES || '').trim().toUpperCase()
+      return firstCol && firstCol !== 'NAMES' && firstCol !== 'NAME' && !firstCol.includes('FULL PAID')
+    })
 
     for (const row of actualData) {
-      const nameVal = String(row['__EMPTY']).trim()
+      const nameVal = String(row['__EMPTY'] || row.Name || row.NAMES || '').trim()
       if (!nameVal) continue
 
-      const programAmt = Number(row['__EMPTY_1']) || 0
-      const paidAmt = Number(row['__EMPTY_2']) || 0
-      const balanceAmt = Number(row['__EMPTY_3']) || 0
-      const statusVal = row['__EMPTY_4'] || ''
+      // Detect investor category/type across all potential columns
+      const col1 = String(row['__EMPTY_1'] || '').trim()
+      const colCat = String(row.Category || row.CATEGORY || row.Type || row['Investor Type'] || row['INVESTOR TYPE'] || '').trim()
+      const isCol1Text = isNaN(Number(col1)) && col1.length > 0
+      
+      const categoryText = (colCat || (isCol1Text ? col1 : '')).toUpperCase()
+      const isNewFarmer = categoryText.includes('FARM') || String(row['__EMPTY_5'] || '').toUpperCase().includes('FARM')
+      const investorType = isNewFarmer ? 'New Farmer' : 'Money Maker'
+
+      let programAmt = 8000000
+      let paidAmt = 0
+      let balanceAmt = 0
+      let statusVal = ''
+
+      if (isCol1Text) {
+        // Layout: [Name, Category/Type, ProgramAmt, PaidAmt, BalanceAmt, Status]
+        programAmt = Number(row['__EMPTY_2'] || row['Program Amount'] || row['AMOUNT']) || 8000000
+        paidAmt = Number(row['__EMPTY_3'] || row['Paid'] || row['PAID'] || row['Investment Amount']) || 0
+        balanceAmt = Number(row['__EMPTY_4'] || row['Balance'] || row['BALANCE']) || 0
+        statusVal = String(row['__EMPTY_5'] || row['Status'] || row['STATUS'] || '').trim()
+      } else {
+        // Layout: [Name, ProgramAmt, PaidAmt, BalanceAmt, Status]
+        programAmt = Number(row['__EMPTY_1'] || row['Program Amount'] || row['AMOUNT']) || 8000000
+        paidAmt = Number(row['__EMPTY_2'] || row['Paid'] || row['PAID'] || row['Investment Amount']) || 0
+        balanceAmt = Number(row['__EMPTY_3'] || row['Balance'] || row['BALANCE']) || 0
+        statusVal = String(row['__EMPTY_4'] || row['Status'] || row['STATUS'] || '').trim()
+      }
 
       // ONLY register investors who have actually paid (investmentAmount > 0)
       if (paidAmt <= 0) continue
@@ -1235,7 +1261,7 @@ export const useSaccoStore = create((set, get) => ({
       if (!matchedMember) {
         memberId = crypto.randomUUID()
         const memberRecord = {
-          id: memberId, name: cleanName(nameVal), phone: '', nin: '', category: ['Saving Member', 'Investor'], photo: '',
+          id: memberId, name: cleanName(nameVal), phone: '', nin: '', category: ['Saving Member', 'Investor', investorType], photo: '',
           correctBalance: 0, jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0,
           total: paidAmt, shares: 0, admin: 50000, savings: 0, mandatory: 0, withdrawable: 0, requested: 0, difference: 0, noOfShares: 1,
           createdAt: now
@@ -1247,7 +1273,7 @@ export const useSaccoStore = create((set, get) => ({
       } else {
         memberId = matchedMember.id
         const existingCats = Array.isArray(matchedMember.category) ? matchedMember.category : [matchedMember.category || 'Saving Member']
-        const updatedCats = Array.from(new Set(['Saving Member', ...existingCats, 'Investor']))
+        const updatedCats = Array.from(new Set(['Saving Member', ...existingCats, 'Investor', investorType]))
         await db.saccoMembers.update(memberId, { category: updatedCats })
       }
 
@@ -1256,8 +1282,8 @@ export const useSaccoStore = create((set, get) => ({
         id: crypto.randomUUID(),
         memberId,
         name: cleanName(nameVal),
-        category: 'Money Maker',
-        investorType: 'Money Maker',
+        category: investorType,
+        investorType,
         investmentPhase: 'Phase 1 & 2',
         marketingStrategy: false,
         investmentAmount: paidAmt,
