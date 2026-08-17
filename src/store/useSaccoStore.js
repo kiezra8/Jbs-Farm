@@ -1201,9 +1201,17 @@ export const useSaccoStore = create((set, get) => ({
     return rows
   },
 
-  importInvestmentExcel: async (data) => {
+    importInvestmentExcel: async (data) => {
     set({ loading: true })
     const now = new Date().toISOString()
+
+    // 1. Clear old investors table so we only retain the newly uploaded paying investors
+    await db.saccoInvestors.clear()
+    try {
+      const { clearSaccoTable } = await import('../services/supabaseSyncEngine')
+      await clearSaccoTable('saccoInvestors')
+    } catch (_) {}
+
     const members = await db.saccoMembers.toArray()
     
     // Skip empty rows and the header row
@@ -1213,15 +1221,23 @@ export const useSaccoStore = create((set, get) => ({
       const nameVal = String(row['__EMPTY']).trim()
       if (!nameVal) continue
 
+      const programAmt = Number(row['__EMPTY_1']) || 0
+      const paidAmt = Number(row['__EMPTY_2']) || 0
+      const balanceAmt = Number(row['__EMPTY_3']) || 0
+      const statusVal = row['__EMPTY_4'] || ''
+
+      // ONLY register investors who have actually paid (investmentAmount > 0)
+      if (paidAmt <= 0) continue
+
       let matchedMember = findMatchingMember(members, nameVal)
       let memberId
 
       if (!matchedMember) {
         memberId = crypto.randomUUID()
         const memberRecord = {
-          id: memberId, name: cleanName(nameVal), phone: '', nin: '', category: ['Investor'], photo: '',
+          id: memberId, name: cleanName(nameVal), phone: '', nin: '', category: ['Saving Member', 'Investor'], photo: '',
           correctBalance: 0, jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0,
-          total: 50000, shares: 0, admin: 50000, savings: 0, mandatory: 0, withdrawable: 0, requested: 0, difference: 0, noOfShares: 0,
+          total: paidAmt, shares: 0, admin: 50000, savings: 0, mandatory: 0, withdrawable: 0, requested: 0, difference: 0, noOfShares: 1,
           createdAt: now
         }
         await db.saccoMembers.add(memberRecord)
@@ -1231,26 +1247,37 @@ export const useSaccoStore = create((set, get) => ({
       } else {
         memberId = matchedMember.id
         const existingCats = Array.isArray(matchedMember.category) ? matchedMember.category : [matchedMember.category || 'Saving Member']
-        if (!existingCats.includes('Investor')) {
-          await db.saccoMembers.update(memberId, { category: [...existingCats, 'Investor'] })
-        }
+        const updatedCats = Array.from(new Set(['Saving Member', ...existingCats, 'Investor']))
+        await db.saccoMembers.update(memberId, { category: updatedCats })
       }
 
+      const isCleared = (balanceAmt === 0 && paidAmt > 0) || paidAmt >= (programAmt || 8000000)
       await db.saccoInvestors.add({
         id: crypto.randomUUID(),
         memberId,
+        name: cleanName(nameVal),
         category: 'Money Maker',
         investorType: 'Money Maker',
         investmentPhase: 'Phase 1 & 2',
         marketingStrategy: false,
-        investmentAmount: Number(row['__EMPTY_2']) || 0,
-        programAmount: Number(row['__EMPTY_1']) || 0,
-        balance: Number(row['__EMPTY_3']) || 0,
-        status: row['__EMPTY_4'] || '',
+        investmentAmount: paidAmt,
+        programAmount: programAmt || 8000000,
+        balance: isCleared ? 0 : (balanceAmt || Math.max(0, (programAmt || 8000000) - paidAmt)),
+        status: isCleared ? 'CLEARED' : (statusVal || 'PENDING'),
+        moneyMakerAmount: Math.round(((programAmt || 8000000) / 8000000) * 350000),
         cowsPerYear: 0,
         createdAt: now
       })
     }
+
+    // Auto-sync the clean investor list to Supabase
+    try {
+      const { forceUploadSaccoToSupabase } = await import('../services/supabaseSyncEngine')
+      await forceUploadSaccoToSupabase()
+    } catch (e) {
+      console.warn('Post investor import Supabase sync failed:', e)
+    }
+
     await get().loadSaccoData()
   }
 }))

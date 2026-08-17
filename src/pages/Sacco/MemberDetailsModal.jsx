@@ -256,16 +256,18 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                 <div><label className="block text-xs font-medium text-slate-400 mb-1">Phone</label><input type="tel" className="input-field" value={biodata.phone} onChange={e => setBiodata({...biodata, phone: e.target.value})} /></div>
                 <div><label className="block text-xs font-medium text-slate-400 mb-1">NIN</label><input type="text" className="input-field" value={biodata.nin} onChange={e => setBiodata({...biodata, nin: e.target.value})} /></div>
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-2">Category (select all that apply)</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-2">Category (All members are Saving Members; select additional categories)</label>
                   <div className="flex flex-wrap gap-2">
                     {['Saving Member', 'Pioneer', 'Investor'].map(cat => {
-                      const catArr = Array.isArray(biodata.category) ? biodata.category : [biodata.category]
-                      const selected = cat === 'Investor'
+                      const catArr = Array.isArray(biodata.category) ? biodata.category : [biodata.category || 'Saving Member']
+                      const isSaving = cat === 'Saving Member'
+                      const selected = isSaving || (cat === 'Investor'
                         ? catArr.some(c => ['Investor', 'Money Maker', 'New Farmer'].includes(c))
-                        : catArr.includes(cat)
+                        : catArr.includes(cat))
 
                       return (
                         <button key={cat} type="button" onClick={() => {
+                          if (isSaving) return // Always mandatory for all members
                           let updated
                           if (selected) {
                             if (cat === 'Investor') {
@@ -280,14 +282,18 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
                               updated = [...catArr, cat]
                             }
                           }
-                          setBiodata({...biodata, category: updated.length ? updated : [cat]})
-                        }} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                          // Ensure 'Saving Member' is always included
+                          if (!updated.includes('Saving Member')) updated.unshift('Saving Member')
+                          setBiodata({...biodata, category: updated})
+                        }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
                           selected 
-                            ? cat === 'Investor' ? 'bg-purple-500/20 text-purple-400 border-purple-500/40' 
-                              : cat === 'Pioneer' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                              : 'bg-white/10 text-white border-white/20'
-                            : 'bg-white/5 text-slate-400 border-transparent hover:bg-white/10'
-                        }`}>{cat}</button>
+                            ? cat === 'Investor' ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm' 
+                              : cat === 'Pioneer' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                              : 'bg-blue-500/20 text-blue-300 border-blue-500/40 cursor-default'
+                            : 'bg-slate-800 text-slate-400 border-white/5 hover:bg-slate-700 hover:text-white'
+                        }`}>
+                          {cat} {isSaving && '✓'}
+                        </button>
                       )
                     })}
                   </div>

@@ -723,12 +723,23 @@ export default function Sacco() {
   const hasSavingCategory = (catVal) => true
 
   const matchesFilter = (m) => {
-    const matchesSearch = m.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          m.phone?.includes(searchQuery) || 
-                          m.nin?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = categoryFilter 
-      ? (Array.isArray(m.category) ? m.category.includes(categoryFilter) : m.category === categoryFilter) 
-      : true
+    const matchesSearch = (m.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          (m.phone || '').includes(searchQuery) || 
+                          (m.nin || '').toLowerCase().includes(searchQuery.toLowerCase())
+    
+    let matchesCategory = true
+    const cats = Array.isArray(m.category) ? m.category : [m.category || 'Saving Member']
+    if (categoryFilter === 'Pioneer') {
+      matchesCategory = cats.includes('Pioneer')
+    } else if (categoryFilter === 'Investor') {
+      matchesCategory = cats.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c))
+    } else if (categoryFilter === 'Saving Member') {
+      // All members are saving members
+      matchesCategory = true
+    } else if (categoryFilter) {
+      matchesCategory = cats.includes(categoryFilter)
+    }
+
     return matchesSearch && matchesCategory
   }
 
@@ -745,6 +756,8 @@ export default function Sacco() {
       return { ...m, noOfShares: liveShareCount, savings: liveSavings, index: i + 1 }
     })
 
+  const pioneerMembersCount = members.filter(m => (Array.isArray(m.category) ? m.category : [m.category || '']).includes('Pioneer')).length
+  const investorMembersCount = members.filter(m => (Array.isArray(m.category) ? m.category : [m.category || '']).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c))).length
 
   const sharesData = members
     .filter(m => hasSavingCategory(m.category))
@@ -787,49 +800,21 @@ export default function Sacco() {
       }
     })
 
-  // Build investors data:
-  // 1. Start with all members whose category includes 'Investor', 'Money Maker', or 'New Farmer'
-  // 2. Merge in any existing saccoInvestors records for full detail
-  const hasInvestorCategory = (catVal) => {
-    let cats = []
-    if (Array.isArray(catVal)) cats = catVal
-    else if (typeof catVal === 'string') {
-      try { cats = catVal.trim().startsWith('[') ? JSON.parse(catVal) : catVal.split(',').map(c => c.trim()) } catch (_) { cats = [catVal] }
-    }
-    return cats.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Pioneer', 'Phase 3'].includes(c))
-  }
+  // Registered investors: ONLY include investors who have actually paid (investmentAmount > 0)
+  const detailedInvestors = investors
+    .filter(i => (Number(i.investmentAmount) || 0) > 0)
+    .map(i => {
+      const member = members.find(m => m.id === i.memberId)
+      return {
+        ...i,
+        name: member?.name || i.name || 'Unknown',
+        memberCategory: member?.category || i.category || 'Money Maker',
+        investorType: i.investorType || i.category || 'Money Maker'
+      }
+    })
 
-  const investorMemberIds = new Set(investors.map(i => i.memberId))
-
-  // Members who have investor category but no saccoInvestors record yet
-  const membersAsInvestors = members
-    .filter(m => (hasInvestorCategory(m.category) || investors.length === 0) && !investorMemberIds.has(m.id))
-    .map(m => ({
-      id: `member-${m.id}`,
-      memberId: m.id,
-      name: m.name,
-      category: Array.isArray(m.category) ? m.category.join(', ') : m.category,
-      memberCategory: m.category,
-      investorType: (Array.isArray(m.category) ? m.category : [m.category]).includes('New Farmer') ? 'New Farmer' : 'Money Maker',
-      investmentPhase: m.sheetSource || 'Phase 1',
-      marketingStrategy: false,
-      moneyMakerAmount: 0,
-      cowsPerYear: 0,
-    }))
-
-  // Existing saccoInvestors records merged with member name
-  const detailedInvestors = investors.map(i => {
-    const member = members.find(m => m.id === i.memberId)
-    return {
-      ...i,
-      name: member?.name || i.name || 'Unknown',
-      memberCategory: member?.category || i.category || 'Money Maker',
-      investorType: i.investorType || i.category || 'Money Maker'
-    }
-  })
-
-  const investorsData = [...detailedInvestors, ...membersAsInvestors].filter(i => {
-    const matchesSearch = i.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  const investorsData = detailedInvestors.filter(i => {
+    const matchesSearch = (i.name || '').toLowerCase().includes(searchQuery.toLowerCase())
     return matchesSearch
   })
   
@@ -1347,51 +1332,72 @@ export default function Sacco() {
             <div className="space-y-0">
               {/* Search / Filters Bar (not shown in accounts tab) */}
               {activeTab !== 'accounts' && (
-                <div className="glass-card p-4 mb-4">
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                <div className="glass-card p-4 mb-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                    <div className="flex-1 flex items-center gap-2 bg-slate-900/80 border border-white/10 rounded-xl px-3 py-2">
                       <Search size={16} className="text-slate-400 flex-shrink-0" />
                       <input 
                         type="text" 
                         placeholder={activeTab === 'members' ? "Search members by name, phone or NIN..." : "Search by member name..."} 
-                        className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500" 
+                        className="bg-transparent border-none outline-none w-full text-white text-sm placeholder:text-slate-500" 
                         value={searchQuery} 
                         onChange={(e) => setSearchQuery(e.target.value)} 
                       />
+                      {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className="text-xs text-slate-400 hover:text-white">✕</button>
+                      )}
                     </div>
                     
-                    {activeTab === 'members' && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-                        <Filter size={16} className="text-slate-400" />
-                        <select 
-                          className="bg-transparent border-none outline-none text-sm text-white" 
-                          value={categoryFilter} 
-                          onChange={e => setCategoryFilter(e.target.value)}
-                        >
-                          <option value="">All Categories</option>
-                          <option value="Pioneer">Pioneer</option>
-                          <option value="Investor">Investor</option>
-                          <option value="Saving Member">Saving Member</option>
-                        </select>
-                      </div>
-                    )}
-
-                    {activeTab !== 'accounts' && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-                        <span className="text-xs text-slate-400 font-semibold uppercase">FY:</span>
-                        <select 
-                          className="bg-transparent border-none outline-none text-sm font-semibold text-emerald-400" 
-                          value={selectedYear} 
-                          onChange={e => setSelectedYear(e.target.value)}
-                        >
-                          <option value="2026" className="bg-slate-900 text-white">Jan–Dec 2026</option>
-                          <option value="2026-2027" className="bg-slate-900 text-white">Jun 2026 – Jun 2027</option>
-                          <option value="2027" className="bg-slate-900 text-white">Jan–Dec 2027</option>
-                          <option value="2027-2028" className="bg-slate-900 text-white">Jun 2027 – Jun 2028</option>
-                        </select>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/80 border border-white/10">
+                      <span className="text-xs text-slate-400 font-semibold uppercase">FY:</span>
+                      <select 
+                        className="bg-transparent border-none outline-none text-xs font-semibold text-emerald-400" 
+                        value={selectedYear} 
+                        onChange={e => setSelectedYear(e.target.value)}
+                      >
+                        <option value="2026" className="bg-slate-900 text-white">Jan–Dec 2026</option>
+                        <option value="2026-2027" className="bg-slate-900 text-white">Jun 2026 – Jun 2027</option>
+                        <option value="2027" className="bg-slate-900 text-white">Jan–Dec 2027</option>
+                        <option value="2027-2028" className="bg-slate-900 text-white">Jun 2027 – Jun 2028</option>
+                      </select>
+                    </div>
                   </div>
+
+                  {/* Dark Category Navigation Pill Bar for Easy Sorting */}
+                  {activeTab === 'members' && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
+                        <Filter size={12} className="text-emerald-400" /> Category:
+                      </span>
+                      {[
+                        { id: '', label: 'All Members', count: members.length, color: 'text-slate-300' },
+                        { id: 'Saving Member', label: 'Saving Members', count: members.length, color: 'text-blue-400' },
+                        { id: 'Pioneer', label: 'Pioneers', count: pioneerMembersCount, color: 'text-emerald-400' },
+                        { id: 'Investor', label: 'Investors', count: investorMembersCount, color: 'text-purple-400' },
+                      ].map(cat => {
+                        const isSelected = categoryFilter === cat.id
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setCategoryFilter(cat.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+                              isSelected
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-md shadow-emerald-950/40'
+                                : 'bg-slate-900/90 text-slate-400 hover:text-white hover:bg-slate-800 border border-white/10'
+                            }`}
+                          >
+                            <span>{cat.label}</span>
+                            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
+                              isSelected ? 'bg-emerald-500/30 text-emerald-200' : 'bg-white/5 text-slate-400'
+                            }`}>
+                              {cat.count}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
