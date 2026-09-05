@@ -66,7 +66,8 @@ export const useAnimalStore = create((set, get) => ({
         a.name?.toLowerCase().includes(q) || 
         a.tagNumber?.toLowerCase().includes(q) || 
         a.breed?.toLowerCase().includes(q) ||
-        (typeof a.age === 'string' && a.age.toLowerCase().includes(q))
+        (typeof a.age === 'string' && a.age.toLowerCase().includes(q)) ||
+        (Boolean(a.hasCalf) && ('with calf'.includes(q) || 'calf'.includes(q)))
       const matchBreed = !filters.breed || a.breed === filters.breed
       const matchGender = !filters.gender || a.gender === filters.gender
       

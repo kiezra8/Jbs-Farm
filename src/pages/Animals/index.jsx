@@ -26,7 +26,7 @@ export default function Animals() {
   const [isSickModalOpen, setIsSickModalOpen] = useState(false)
 
   const initialForm = {
-    tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: ['Healthy'], weight: '', age: 'Cow', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: ''
+    tagNumber: '', name: '', breed: 'Friesian', gender: 'Female', status: ['Healthy'], hasCalf: false, weight: '', age: 'Cow', dob: '', purchaseDate: '', purchasePrice: '', color: '', notes: ''
   }
 
   // Form State
@@ -58,6 +58,7 @@ export default function Animals() {
       breed: animal.breed || 'Friesian',
       gender: animal.gender || 'Female',
       status: parsedStatuses,
+      hasCalf: Boolean(animal.hasCalf),
       weight: animal.weight || '',
       age: parsedAge,
       dob: animal.dob || '',
@@ -87,6 +88,7 @@ export default function Animals() {
       const payload = {
         ...formData,
         name: formData.name.trim(),
+        hasCalf: formData.gender === 'Male' ? false : Boolean(formData.hasCalf),
         weight: Number(formData.weight) || 0,
         age: formData.age || (formData.gender === 'Male' ? 'Bull' : 'Cow'),
         status: Array.isArray(formData.status) && formData.status.length > 0 ? formData.status : ['Healthy'],
@@ -114,13 +116,32 @@ export default function Animals() {
         </div>
         <div>
           <p className="font-semibold text-white">{val}</p>
-          <p className="text-xs text-emerald-400 font-medium">{row.name || 'Unnamed'}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs text-emerald-400 font-medium">{row.name || 'Unnamed'}</span>
+            {row.gender !== 'Male' && row.hasCalf && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                🍼 Calf
+              </span>
+            )}
+          </div>
         </div>
       </div>
     )},
     { key: 'breed', label: 'Breed' },
     { key: 'gender', label: 'Gender', render: (val) => <Badge variant={val === 'Female' ? 'purple' : 'blue'}>{val}</Badge> },
     { key: 'age', label: 'Age Category', render: (val) => <span className="font-medium text-slate-200">{formatAge(val)}</span> },
+    { key: 'hasCalf', label: 'Calf Status', render: (val, row) => {
+      if (row.gender === 'Male') return <span className="text-slate-500 text-xs">—</span>
+      return val ? (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 border border-emerald-500/35 text-emerald-300">
+          🍼 With Calf
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-slate-400">
+          No Calf
+        </span>
+      )
+    }},
     { key: 'weight', label: 'Weight', render: (val) => formatWeight(val) },
     { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val} /> },
     { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
@@ -254,6 +275,43 @@ export default function Animals() {
               </div>
             </div>
 
+            {/* Calf Status (Does cow have a calf?) */}
+            {formData.gender !== 'Male' && (
+              <div className="col-span-2 bg-white/5 p-3 rounded-xl border border-white/10">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-300">Calf Status (Does this cow have a calf?)</label>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {formData.hasCalf ? '🍼 Nursing calf attached' : 'No calf'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, hasCalf: false })}
+                    className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all text-center ${
+                      !formData.hasCalf
+                        ? 'bg-slate-700/80 border-slate-500 text-white shadow-sm font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    No Calf
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, hasCalf: true })}
+                    className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all text-center flex items-center justify-center gap-1.5 ${
+                      formData.hasCalf
+                        ? 'bg-emerald-500/25 border-emerald-500 text-emerald-300 shadow-sm shadow-emerald-500/20 font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <span>🍼</span>
+                    <span>With Calf</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Status (Multi-Selectable Checkboxes) */}
             <div className="col-span-2">
               <div className="flex items-center justify-between mb-1.5">
@@ -311,6 +369,19 @@ export default function Animals() {
             </div>
             <h3 className="font-display font-bold text-2xl text-white">{selectedAnimal.tagNumber}</h3>
             <p className="text-slate-400">{selectedAnimal.name || 'Unnamed'} • {selectedAnimal.breed}</p>
+            {selectedAnimal.gender !== 'Male' && (
+              <div className="mt-3">
+                {selectedAnimal.hasCalf ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                    🍼 With Calf
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-white/10 border border-white/20 text-slate-300">
+                    No Calf
+                  </span>
+                )}
+              </div>
+            )}
             <div className="mt-8 flex gap-3 w-full">
               <button className="btn-secondary flex-1 justify-center" onClick={() => setIsQRModalOpen(false)}>Close</button>
             </div>
