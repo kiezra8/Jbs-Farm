@@ -61,7 +61,6 @@ export default function Dashboard() {
   const animalStats = getAnimalStats()
   const milkStats = getMilkStats()
   const staffStats = getStaffStats()
-  const monthFinance = getMonthlyStats()
   const lowStock = getLowStockItems()
   const milkTrend = getDailyTotals(14)
 
@@ -87,15 +86,11 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Row 2 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="Monthly Revenue" value={monthFinance.income} prefix="Ushs" icon={DollarSign} color="green"
-          trendLabel="This month" delay={0.2} />
-        <KPICard title="Monthly Expenses" value={monthFinance.expenses} prefix="Ushs" icon={TrendingUp} color="amber"
-          trendLabel="This month" delay={0.25} />
+      <div className="grid grid-cols-2 gap-4">
         <KPICard title="Staff Present" value={staffStats.present} icon={Users} color="blue"
-          trendLabel={`of ${staffStats.total} staff today`} delay={0.3} />
+          trendLabel={`of ${staffStats.total} staff today`} delay={0.2} />
         <KPICard title="Low Stock Feeds" value={lowStock.length} icon={Wheat} color={lowStock.length > 0 ? 'red' : 'green'}
-          trendLabel={lowStock.length > 0 ? 'Need restocking' : 'All stocked'} delay={0.35} />
+          trendLabel={lowStock.length > 0 ? 'Need restocking' : 'All stocked'} delay={0.25} />
       </div>
 
       {/* Charts Row */}
