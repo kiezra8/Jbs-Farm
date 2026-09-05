@@ -17,15 +17,29 @@ export function StatusBadge({ status }) {
     'Healthy':  { variant: 'green',  label: 'Healthy' },
     'Sick':     { variant: 'red',    label: 'Sick' },
     'Pregnant': { variant: 'purple', label: 'Pregnant' },
-    'Calf':     { variant: 'blue',   label: 'Calf' },
     'Dry':      { variant: 'amber',  label: 'Dry' },
     'Sold':     { variant: 'gray',   label: 'Sold' },
     'Deceased': { variant: 'gray',   label: 'Deceased' },
     'Active':   { variant: 'green',  label: 'Active' },
     'Inactive': { variant: 'gray',   label: 'Inactive' },
   }
-  const cfg = map[status] || { variant: 'gray', label: status }
-  return <Badge variant={cfg.variant}>{cfg.label}</Badge>
+
+  if (!status) return <Badge variant="gray">—</Badge>
+
+  const list = Array.isArray(status) 
+    ? status 
+    : (typeof status === 'string' ? status.split(',').map(s => s.trim()).filter(Boolean) : [status])
+
+  if (list.length === 0) return <Badge variant="gray">—</Badge>
+
+  return (
+    <div className="flex flex-wrap gap-1 items-center">
+      {list.map(s => {
+        const cfg = map[s] || { variant: 'gray', label: s }
+        return <Badge key={s} variant={cfg.variant}>{cfg.label}</Badge>
+      })}
+    </div>
+  )
 }
 
 // Health type badge

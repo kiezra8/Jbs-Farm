@@ -104,7 +104,7 @@ export default function Sacco() {
   const investorExcelInputRef = useRef(null)
   const expenseExcelInputRef = useRef(null)
 
-  const [isUnlocked, setIsUnlocked] = useState(true)
+  const [isUnlocked, setIsUnlocked] = useState(() => sessionStorage.getItem('saccoUnlocked') === 'true')
   const [pinInput, setPinInput] = useState('')
 
   useEffect(() => {
@@ -1123,7 +1123,7 @@ export default function Sacco() {
         <form 
           onSubmit={(e) => {
             e.preventDefault()
-            if (pinInput === '7654320') {
+            if (pinInput === '987654320') {
               setIsUnlocked(true)
               sessionStorage.setItem('saccoUnlocked', 'true')
             } else {

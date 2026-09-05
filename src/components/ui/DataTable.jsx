@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
 
-export default function DataTable({ columns, data, pageSize = 10, emptyMessage = 'No records found' }) {
+export default function DataTable({ columns, data, pageSize = 10, emptyMessage = 'No records found', onRowClick }) {
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const [page, setPage] = useState(1)
@@ -63,9 +63,9 @@ export default function DataTable({ columns, data, pageSize = 10, emptyMessage =
               </tr>
             ) : paged.map((row, i) => (
               <tr key={row.id ?? i}
-                className="table-row-hover border-t"
+                className={`table-row-hover border-t ${onRowClick ? 'cursor-pointer hover:bg-white/[0.07]' : ''}`}
                 style={{ borderColor: 'rgba(255,255,255,0.04)' }}
-                onClick={() => row.onClick?.()}
+                onClick={() => onRowClick ? onRowClick(row) : row.onClick?.()}
               >
                 {columns.map(col => (
                   <td key={col.key || col.label} className="px-4 py-3 text-slate-300">

@@ -10,9 +10,12 @@ export const formatLiters = (val) => `${Number(val || 0).toFixed(1)} L`
 // Format weight
 export const formatWeight = (val) => `${Number(val || 0).toFixed(0)} kg`
 
-// Format age in months to readable string
-export const formatAge = (months) => {
-  if (!months) return '—'
+// Format age in categories or months to readable string
+export const formatAge = (val) => {
+  if (!val && val !== 0) return '—'
+  if (['Heifer', 'Bullock', 'Bull', 'Cow'].includes(val)) return val
+  const months = Number(val)
+  if (isNaN(months)) return String(val)
   if (months < 12) return `${months}mo`
   const yrs = Math.floor(months / 12)
   const mo = months % 12

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2 } from 'lucide-react'
+import { Plus, Edit2, Search, X } from 'lucide-react'
 import { useFeedStore } from '../../store/useFeedStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
@@ -12,6 +12,7 @@ export default function Feed() {
   const [isLogOpen, setIsLogOpen] = useState(false)
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false)
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
+  const [feedSearchQuery, setFeedSearchQuery] = useState('')
   
   const [editingInventoryItem, setEditingInventoryItem] = useState(null)
 
@@ -22,6 +23,18 @@ export default function Feed() {
   useEffect(() => { loadAll() }, [])
 
   const stats = getStats()
+
+  const filteredInventory = inventory.filter(i => {
+    if (!feedSearchQuery) return true
+    const q = feedSearchQuery.toLowerCase()
+    return i.feedType?.toLowerCase().includes(q)
+  })
+
+  const filteredTransactions = transactions.filter(t => {
+    if (!feedSearchQuery) return true
+    const q = feedSearchQuery.toLowerCase()
+    return t.feedType?.toLowerCase().includes(q) || t.type?.toLowerCase().includes(q) || t.notes?.toLowerCase().includes(q) || t.supplier?.toLowerCase().includes(q)
+  })
 
   const handleLogSave = async (e) => {
     e.preventDefault()
@@ -116,14 +129,43 @@ export default function Feed() {
         </div>
       </div>
 
+      {/* Search Bar for Feed Records */}
+      <div className="glass-card p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-white">Feed Records Search</h3>
+          <p className="text-xs text-slate-400">Search across inventory stock and transaction history</p>
+        </div>
+        <div className="search-bar w-full sm:w-80">
+          <Search size={16} className="text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search feed type, supplier, notes..." 
+            className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500 text-xs" 
+            value={feedSearchQuery} 
+            onChange={(e) => setFeedSearchQuery(e.target.value)} 
+          />
+          {feedSearchQuery && (
+            <button type="button" onClick={() => setFeedSearchQuery('')} className="text-slate-400 hover:text-white">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-card p-5">
-          <h3 className="font-display font-semibold text-white mb-4">Current Inventory</h3>
-          <DataTable columns={inventoryCols} data={inventory} pageSize={6} />
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-display font-semibold text-white">Current Inventory</h3>
+            <span className="text-xs text-slate-400">{filteredInventory.length} item(s)</span>
+          </div>
+          <DataTable columns={inventoryCols} data={filteredInventory} pageSize={6} />
         </div>
         <div className="glass-card p-5">
-          <h3 className="font-display font-semibold text-white mb-4">Recent Transactions</h3>
-          <DataTable columns={transactionCols} data={transactions} pageSize={6} />
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-display font-semibold text-white">Recent Transactions</h3>
+            <span className="text-xs text-slate-400">{filteredTransactions.length} transaction(s)</span>
+          </div>
+          <DataTable columns={transactionCols} data={filteredTransactions} pageSize={6} />
         </div>
       </div>
 

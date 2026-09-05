@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2 } from 'lucide-react'
+import { Plus, Edit2, Trash2, Search, X } from 'lucide-react'
 import { useBreedingStore } from '../../store/useBreedingStore'
 import { useAnimalStore } from '../../store/useAnimalStore'
 import DataTable from '../../components/ui/DataTable'
@@ -15,6 +15,7 @@ export default function Breeding() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const initialForm = {
     animalId: '',
@@ -35,6 +36,33 @@ export default function Breeding() {
     const animal = animals.find(a => String(a.id) === String(r.animalId))
     return { ...r, animalName: animal?.name, tagNumber: animal?.tagNumber }
   })
+
+  const filteredRecords = enhancedRecords.filter(r => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      r.tagNumber?.toLowerCase().includes(q) ||
+      r.animalName?.toLowerCase().includes(q) ||
+      r.bull?.toLowerCase().includes(q) ||
+      r.type?.toLowerCase().includes(q) ||
+      r.status?.toLowerCase().includes(q) ||
+      r.notes?.toLowerCase().includes(q)
+    )
+  })
+
+  const handleOpenEdit = (row) => {
+    setEditingRecord(row)
+    setFormData({
+      animalId: row.animalId,
+      type: row.type,
+      date: row.date,
+      bull: row.bull || '',
+      status: row.status,
+      expectedCalving: row.expectedCalving || '',
+      notes: row.notes || ''
+    })
+    setIsModalOpen(true)
+  }
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -63,19 +91,7 @@ export default function Breeding() {
     { key: 'expectedCalving', label: 'Expected Calving', render: (val) => val ? format(new Date(val), 'dd MMM yyyy') : '—' },
     { key: 'actions', label: 'Actions', sortable: false, render: (_, row) => (
       <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-        <button onClick={() => {
-          setEditingRecord(row)
-          setFormData({
-            animalId: row.animalId,
-            type: row.type,
-            date: row.date,
-            bull: row.bull || '',
-            status: row.status,
-            expectedCalving: row.expectedCalving || '',
-            notes: row.notes || ''
-          })
-          setIsModalOpen(true)
-        }} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
+        <button onClick={() => handleOpenEdit(row)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white" title="Edit">
           <Edit2 size={16} />
         </button>
         <button onClick={() => { setSelectedRecord(row); setIsDeleteOpen(true) }} className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400" title="Delete">
@@ -111,7 +127,28 @@ export default function Breeding() {
       </div>
 
       <div className="glass-card p-5">
-        <DataTable columns={columns} data={enhancedRecords} pageSize={10} />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 pb-3 border-b border-white/10">
+          <div>
+            <h3 className="text-lg font-bold text-white">Breeding History</h3>
+            <p className="text-xs text-slate-400">Showing {filteredRecords.length} record(s)</p>
+          </div>
+          <div className="search-bar w-full sm:w-80">
+            <Search size={16} className="text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Search cow tag, bull sire, status..." 
+              className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500 text-xs" 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)} 
+            />
+            {searchQuery && (
+              <button type="button" onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-white">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+        <DataTable columns={columns} data={filteredRecords} pageSize={10} onRowClick={handleOpenEdit} />
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setFormData(initialForm) }} title={editingRecord ? "Edit Breeding Record" : "Add Breeding Record"}>

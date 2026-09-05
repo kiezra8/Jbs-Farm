@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { db } from '../db/schema'
+import { getFirestoreDb } from '../services/syncEngine'
+import { doc, deleteDoc } from 'firebase/firestore'
 
 export const useAnimalStore = create((set, get) => ({
   animals: [],
@@ -32,10 +34,22 @@ export const useAnimalStore = create((set, get) => ({
   },
 
   deleteAnimal: async (id) => {
+    // 1. Delete animal and associated health/breeding records, PRESERVING milk records
     await db.animals.delete(id)
     await db.healthRecords.where('animalId').equals(id).delete()
     await db.breedingRecords.where('animalId').equals(id).delete()
-    await db.milkRecords.where('animalId').equals(id).delete()
+    // NOTE: db.milkRecords is intentionally kept so milk records are NEVER lost
+
+    // 2. Permanently delete from Firebase Firestore so it never comes back
+    try {
+      const firestore = getFirestoreDb()
+      if (firestore) {
+        await deleteDoc(doc(firestore, 'animals', String(id)))
+      }
+    } catch (e) {
+      console.warn('Firestore direct delete warning:', e)
+    }
+
     set(s => ({ animals: s.animals.filter(a => a.id !== id) }))
   },
 
@@ -48,24 +62,41 @@ export const useAnimalStore = create((set, get) => ({
     const { animals, searchQuery, filters } = get()
     return animals.filter(a => {
       const q = searchQuery.toLowerCase()
-      const matchSearch = !q || a.name?.toLowerCase().includes(q) || a.tagNumber?.toLowerCase().includes(q) || a.breed?.toLowerCase().includes(q)
+      const matchSearch = !q || 
+        a.name?.toLowerCase().includes(q) || 
+        a.tagNumber?.toLowerCase().includes(q) || 
+        a.breed?.toLowerCase().includes(q) ||
+        (typeof a.age === 'string' && a.age.toLowerCase().includes(q))
       const matchBreed = !filters.breed || a.breed === filters.breed
       const matchGender = !filters.gender || a.gender === filters.gender
-      const matchStatus = !filters.status || a.status === filters.status
+      
+      const hasStatus = (val, st) => {
+        if (!st) return true
+        if (Array.isArray(val)) return val.includes(st)
+        if (typeof val === 'string') return val.split(',').map(s => s.trim()).includes(st)
+        return val === st
+      }
+      const matchStatus = !filters.status || hasStatus(a.status, filters.status)
+
       return matchSearch && matchBreed && matchGender && matchStatus
     })
   },
 
   getStats: () => {
     const { animals } = get()
+    const hasStatus = (a, st) => {
+      if (Array.isArray(a.status)) return a.status.includes(st)
+      if (typeof a.status === 'string') return a.status.split(',').map(s => s.trim()).includes(st)
+      return a.status === st
+    }
+
     return {
       total: animals.length,
       cows: animals.filter(a => a.gender === 'Female').length,
       bulls: animals.filter(a => a.gender === 'Male').length,
-      calves: animals.filter(a => a.status === 'Calf').length,
-      sick: animals.filter(a => a.status === 'Sick').length,
-      pregnant: animals.filter(a => a.status === 'Pregnant').length,
-      healthy: animals.filter(a => a.status === 'Healthy').length,
+      sick: animals.filter(a => hasStatus(a, 'Sick')).length,
+      pregnant: animals.filter(a => hasStatus(a, 'Pregnant')).length,
+      healthy: animals.filter(a => hasStatus(a, 'Healthy')).length,
     }
   },
 }))

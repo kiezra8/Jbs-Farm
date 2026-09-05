@@ -263,9 +263,13 @@ export function setupDexieHooks() {
     })
 
     // DELETE — a record was removed locally
-    db[table].hook('deleting', function (primKey) {
-      this.onsuccess = function () {
-        if (skipHooks[table]) return
+    db[table].hook('deleting', function (primKey, obj, trans) {
+      if (skipHooks[table]) return
+      if (trans && typeof trans.on === 'function') {
+        trans.on('complete', () => {
+          addToSyncQueue(table, 'delete', primKey, null)
+        })
+      } else {
         addToSyncQueue(table, 'delete', primKey, null)
       }
     })

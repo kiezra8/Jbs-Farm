@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar, BarChart2 } from 'lucide-react'
+import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Calendar, BarChart2, Search, Check, X, Beef } from 'lucide-react'
 import { useMilkStore } from '../../store/useMilkStore'
 import { useAnimalStore } from '../../store/useAnimalStore'
 import DataTable from '../../components/ui/DataTable'
@@ -25,6 +25,8 @@ export default function Milk() {
   const [formData, setFormData] = useState(initialForm)
   const [selectedDateFilter, setSelectedDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedWeekDate, setSelectedWeekDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [milkSearchQuery, setMilkSearchQuery] = useState('')
+  const [cowTypeQuery, setCowTypeQuery] = useState('')
 
   useEffect(() => { loadRecords(); loadAnimals() }, [])
 
@@ -76,6 +78,21 @@ export default function Milk() {
     if (a.totalAmount === 0 && b.totalAmount > 0) return 1;
     return b.totalAmount - a.totalAmount;
   })
+
+  const filteredDailyData = pivotedData.filter(row => {
+    if (!milkSearchQuery) return true
+    const q = milkSearchQuery.toLowerCase()
+    return row.tagNumber?.toLowerCase().includes(q) || row.animalName?.toLowerCase().includes(q)
+  })
+
+  // Female cows for modal selector, filtered by cowTypeQuery
+  const femaleCows = animals.filter(a => a.gender === 'Female')
+  const filteredCowsForSelect = femaleCows.filter(c => {
+    if (!cowTypeQuery) return true
+    const q = cowTypeQuery.toLowerCase()
+    return c.tagNumber?.toLowerCase().includes(q) || c.name?.toLowerCase().includes(q) || c.breed?.toLowerCase().includes(q)
+  })
+  const selectedCowObj = animals.find(a => String(a.id) === String(formData.animalId))
 
   // ─── Weekly View Computation ───────────────────────────────────────────────
   const targetWeekDate = new Date(selectedWeekDate)
@@ -303,7 +320,19 @@ export default function Milk() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    const payload = { ...formData, animalId: formData.animalId, amount: Number(formData.amount) || 0, calvesAmount: Number(formData.calvesAmount) || 0 }
+    if (!formData.animalId) {
+      alert('Please select a cow by typing its name or tag')
+      return
+    }
+    const cow = animals.find(a => String(a.id) === String(formData.animalId))
+    const payload = { 
+      ...formData, 
+      animalId: formData.animalId,
+      animalName: cow?.name || formData.animalName || 'Cow',
+      tagNumber: cow?.tagNumber || formData.tagNumber || '',
+      amount: Number(formData.amount) || 0, 
+      calvesAmount: Number(formData.calvesAmount) || 0 
+    }
     if (editingRecord) {
       await updateRecord(editingRecord.id, payload)
     } else {
@@ -313,6 +342,7 @@ export default function Milk() {
     setEditingRecord(null)
     setEditingRow(null)
     setFormData(initialForm)
+    setCowTypeQuery('')
   }
 
   const columns = [
@@ -435,14 +465,37 @@ export default function Milk() {
           </div>
 
           <div className="glass-card p-5">
-            <h3 className="text-xl font-display font-semibold text-white mb-4 pb-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              {selectedDateFilter ? format(new Date(selectedDateFilter), 'EEEE, dd MMMM yyyy') : 'All Dates'}
-            </h3>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 pb-3 border-b border-white/10">
+              <div>
+                <h3 className="text-xl font-display font-semibold text-white">
+                  {selectedDateFilter ? format(new Date(selectedDateFilter), 'EEEE, dd MMMM yyyy') : 'All Dates'}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">Showing records for {filteredDailyData.length} cow(s)</p>
+              </div>
+
+              {/* Milk Records Search Bar */}
+              <div className="search-bar w-full sm:w-80">
+                <Search size={16} className="text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="Search cow name or tag (e.g. Bella)..." 
+                  className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500 text-xs" 
+                  value={milkSearchQuery} 
+                  onChange={(e) => setMilkSearchQuery(e.target.value)} 
+                />
+                {milkSearchQuery && (
+                  <button type="button" onClick={() => setMilkSearchQuery('')} className="text-slate-400 hover:text-white">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             <DataTable 
               columns={columns} 
-              data={pivotedData} 
+              data={filteredDailyData} 
               pageSize={15} 
-              emptyMessage={`No records for ${selectedDateFilter ? format(new Date(selectedDateFilter), 'dd MMM yyyy') : 'selected date'}`} 
+              emptyMessage={milkSearchQuery ? `No cows found matching "${milkSearchQuery}"` : `No records for ${selectedDateFilter ? format(new Date(selectedDateFilter), 'dd MMM yyyy') : 'selected date'}`} 
             />
           </div>
 
@@ -608,10 +661,89 @@ export default function Milk() {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-400 mb-1">Cow *</label>
-              <select required className="input-field disabled:opacity-50" value={formData.animalId} onChange={e => setFormData({...formData, animalId: e.target.value})} disabled={!!editingRow}>
-                <option value="">Select Milking Cow...</option>
-                {animals.filter(a => a.gender === 'Female').map(a => <option key={a.id} value={a.id}>{a.tagNumber} ({a.name || 'Unnamed'})</option>)}
-              </select>
+              {editingRow ? (
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center border border-green-500/20 text-green-400">
+                      <Beef size={16} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white text-sm">
+                        {editingRow.tagNumber} — <span className="text-emerald-400">{editingRow.animalName}</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400">Milking Cow Record</p>
+                    </div>
+                  </div>
+                </div>
+              ) : formData.animalId ? (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-300">
+                      <Beef size={16} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white text-sm">
+                        {selectedCowObj?.tagNumber} — <span className="text-emerald-300 font-bold">{selectedCowObj?.name || 'Unnamed'}</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400">{selectedCowObj?.breed}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setFormData({ ...formData, animalId: '' }); setCowTypeQuery('') }}
+                    className="btn-secondary text-xs px-2.5 py-1 text-slate-300 hover:text-white"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="search-bar">
+                    <Search size={16} className="text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Type cow name or tag (e.g. Bella or JBS-001)..."
+                      className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500 text-xs"
+                      value={cowTypeQuery}
+                      onChange={e => setCowTypeQuery(e.target.value)}
+                      autoFocus
+                    />
+                    {cowTypeQuery && (
+                      <button type="button" onClick={() => setCowTypeQuery('')} className="text-slate-400 hover:text-white">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-44 overflow-y-auto space-y-1 p-1 rounded-xl bg-slate-900/60 border border-white/10 divide-y divide-white/5">
+                    {filteredCowsForSelect.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-3 text-center">No matching milking cows found</p>
+                    ) : (
+                      filteredCowsForSelect.map(c => (
+                        <div
+                          key={c.id}
+                          onClick={() => {
+                            setFormData({ ...formData, animalId: c.id })
+                            setCowTypeQuery('')
+                          }}
+                          className="flex items-center justify-between p-2 rounded-lg hover:bg-emerald-500/15 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded bg-green-500/10 flex items-center justify-center text-green-400 flex-shrink-0">
+                              <Beef size={13} />
+                            </div>
+                            <div>
+                              <span className="font-semibold text-white text-xs mr-2">{c.tagNumber}</span>
+                              <span className="text-emerald-400 font-bold text-xs">{c.name || 'Unnamed'}</span>
+                              <span className="text-[10px] text-slate-500 ml-1.5">({c.breed})</span>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-semibold text-emerald-400">Select →</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>
             <div>

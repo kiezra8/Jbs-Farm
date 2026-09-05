@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, CheckCircle2 } from 'lucide-react'
+import { Plus, Edit2, Trash2, CheckCircle2, Search, X } from 'lucide-react'
 import { useStaffStore } from '../../store/useStaffStore'
 import DataTable from '../../components/ui/DataTable'
 import { Badge } from '../../components/ui/Badge'
@@ -15,6 +15,7 @@ export default function Staff() {
   const [isTaskOpen, setIsTaskOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState(null)
   const [editingTask, setEditingTask] = useState(null)
+  const [staffSearchQuery, setStaffSearchQuery] = useState('')
 
   const [selectedStaff, setSelectedStaff] = useState(null)
   const [selectedTask, setSelectedTask] = useState(null)
@@ -30,6 +31,19 @@ export default function Staff() {
   useEffect(() => { loadAll() }, [])
 
   const stats = getStats()
+
+  const filteredStaff = staff.filter(s => {
+    if (!staffSearchQuery) return true
+    const q = staffSearchQuery.toLowerCase()
+    return s.name?.toLowerCase().includes(q) || s.role?.toLowerCase().includes(q) || s.phone?.toLowerCase().includes(q)
+  })
+
+  const filteredTasks = tasks.filter(t => {
+    if (!staffSearchQuery) return true
+    const q = staffSearchQuery.toLowerCase()
+    const staffName = staff.find(s => String(s.id) === String(t.staffId))?.name?.toLowerCase() || ''
+    return t.title?.toLowerCase().includes(q) || t.priority?.toLowerCase().includes(q) || t.status?.toLowerCase().includes(q) || staffName.includes(q)
+  })
 
   const handleStaffSave = async (e) => {
     e.preventDefault()
@@ -147,17 +161,46 @@ export default function Staff() {
         <div className="glass-card p-4 flex items-center justify-between"><div><p className="text-xs text-slate-400">Pending Tasks</p><p className="text-2xl font-display font-bold text-amber-400">{stats.pendingTasks}</p></div></div>
       </div>
 
+      {/* Staff & Tasks Search Bar */}
+      <div className="glass-card p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-white">Staff &amp; Task Records Search</h3>
+          <p className="text-xs text-slate-400">Search by personnel name, role, phone, or assigned task</p>
+        </div>
+        <div className="search-bar w-full sm:w-80">
+          <Search size={16} className="text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search staff, role, phone, task..." 
+            className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500 text-xs" 
+            value={staffSearchQuery} 
+            onChange={(e) => setStaffSearchQuery(e.target.value)} 
+          />
+          {staffSearchQuery && (
+            <button type="button" onClick={() => setStaffSearchQuery('')} className="text-slate-400 hover:text-white">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-card p-5">
-          <div className="flex items-center justify-between mb-4"><h3 className="font-display font-semibold text-white">Staff Roster</h3></div>
-          <DataTable columns={staffCols} data={staff} pageSize={6} />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display font-semibold text-white">Staff Roster</h3>
+            <span className="text-xs text-slate-400">{filteredStaff.length} member(s)</span>
+          </div>
+          <DataTable columns={staffCols} data={filteredStaff} pageSize={6} />
         </div>
         <div className="glass-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display font-semibold text-white">Tasks</h3>
+            <div>
+              <h3 className="font-display font-semibold text-white">Tasks</h3>
+              <span className="text-xs text-slate-400">{filteredTasks.length} task(s)</span>
+            </div>
             <button className="btn-secondary text-xs py-1.5 px-3" onClick={() => setIsTaskOpen(true)}>Assign Task</button>
           </div>
-          <DataTable columns={taskCols} data={tasks} pageSize={6} />
+          <DataTable columns={taskCols} data={filteredTasks} pageSize={6} />
         </div>
       </div>
 

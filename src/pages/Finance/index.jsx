@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar, CloudUpload } from 'lucide-react'
+import { Plus, Edit2, Trash2, FileText, FileSpreadsheet, Download, TrendingUp, TrendingDown, DollarSign, BarChart3, Filter, X, ChevronLeft, ChevronRight, Calendar, CloudUpload, Search } from 'lucide-react'
 import { useFinanceStore } from '../../store/useFinanceStore'
 import { useMilkStore } from '../../store/useMilkStore'
 import DataTable from '../../components/ui/DataTable'
@@ -46,6 +46,7 @@ export default function Finance() {
   const [filterSource, setFilterSource] = useState('All')
   const [filterCategory, setFilterCategory] = useState('All')
   const [filterMonth, setFilterMonth] = useState('All')
+  const [financeSearchQuery, setFinanceSearchQuery] = useState('')
 
   // Monthly Revenue Panel state
   const currentYear = new Date().getFullYear()
@@ -227,6 +228,17 @@ export default function Finance() {
     if (filterSource !== 'All' && t.source !== filterSource) return false
     if (filterCategory !== 'All' && t.category !== filterCategory) return false
     if (filterMonth !== 'All' && t.date && !t.date.startsWith(filterMonth)) return false
+    if (financeSearchQuery) {
+      const q = financeSearchQuery.toLowerCase()
+      const match = (
+        t.description?.toLowerCase().includes(q) ||
+        t.category?.toLowerCase().includes(q) ||
+        t.reference?.toLowerCase().includes(q) ||
+        t.source?.toLowerCase().includes(q) ||
+        String(t.amount).includes(q)
+      )
+      if (!match) return false
+    }
     return true
   })
 
@@ -235,9 +247,10 @@ export default function Finance() {
     setFilterSource('All')
     setFilterCategory('All')
     setFilterMonth('All')
+    setFinanceSearchQuery('')
   }
 
-  const hasActiveFilters = filterType !== 'All' || filterSource !== 'All' || filterCategory !== 'All' || filterMonth !== 'All'
+  const hasActiveFilters = filterType !== 'All' || filterSource !== 'All' || filterCategory !== 'All' || filterMonth !== 'All' || Boolean(financeSearchQuery)
 
   /* ──────────────────────── Monthly Revenue Computation ──────────────────────── */
   const allMonthlyData = useMemo(() => {
@@ -1083,9 +1096,28 @@ export default function Finance() {
 
         {/* ── Transaction Ledger ── */}
         <div className="glass-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
-            <h3 className="font-display font-semibold text-white text-sm">Transaction Ledger</h3>
-            <span className="text-xs text-slate-500">{filteredTransactions.length} of {transactions.length} transactions</span>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+            <div>
+              <h3 className="font-display font-semibold text-white text-sm">Transaction Ledger</h3>
+              <span className="text-xs text-slate-500">{filteredTransactions.length} of {transactions.length} transactions</span>
+            </div>
+
+            {/* Finance Search Bar */}
+            <div className="search-bar w-full sm:w-72">
+              <Search size={14} className="text-slate-400" />
+              <input 
+                type="text" 
+                placeholder="Search description, category, ref..." 
+                className="bg-transparent border-none outline-none w-full text-white placeholder:text-slate-500 text-xs" 
+                value={financeSearchQuery} 
+                onChange={(e) => setFinanceSearchQuery(e.target.value)} 
+              />
+              {financeSearchQuery && (
+                <button type="button" onClick={() => setFinanceSearchQuery('')} className="text-slate-400 hover:text-white">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
           <DataTable columns={columns} data={filteredTransactions} pageSize={15} />
         </div>
