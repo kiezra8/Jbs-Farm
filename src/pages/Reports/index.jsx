@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { format, startOfWeek, addDays, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
-import { Download, FileText, FileSpreadsheet } from 'lucide-react'
+import { Download, FileText, FileSpreadsheet, Tag } from 'lucide-react'
 import { exportToPDF, exportToExcel } from '../../utils/exporters'
 import { useAnimalStore } from '../../store/useAnimalStore'
 import { useMilkStore } from '../../store/useMilkStore'
 import { useFinanceStore } from '../../store/useFinanceStore'
 import { useHealthStore } from '../../store/useHealthStore'
+import { loadHistoricalCowNames, buildUnifiedCowList } from '../../services/historicalCows'
 
 export default function Reports() {
   const { animals, loadAnimals } = useAnimalStore()
@@ -19,15 +20,27 @@ export default function Reports() {
   const [selectedMonthlyDate, setSelectedMonthlyDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedWeeklyCow, setSelectedWeeklyCow] = useState('all')
   const [selectedMonthlyCow, setSelectedMonthlyCow] = useState('all')
+  const [historicalNames, setHistoricalNames] = useState({})
+  const [milkHerdFilter, setMilkHerdFilter] = useState('all') // 'all' | 'active' | 'previous'
 
   useEffect(() => {
     loadAnimals()
     loadMilk()
     loadTransactions()
     loadHealth()
+    loadHistoricalCowNames().then(map => setHistoricalNames(map || {}))
   }, [])
 
-  const femaleCows = animals.filter(a => a.gender === 'Female' || !a.gender).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  const unifiedCows = buildUnifiedCowList(animals, milkRecords, historicalNames)
+  const previousCows = unifiedCows.filter(c => c.isHistorical)
+  const activeCows = unifiedCows.filter(c => !c.isHistorical)
+  const femaleCows = unifiedCows
+    .filter(c => {
+      if (milkHerdFilter === 'active') return !c.isHistorical
+      if (milkHerdFilter === 'previous') return c.isHistorical
+      return true
+    })
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   const handleExportHerd = (type) => {
     const data = {
@@ -60,7 +73,7 @@ export default function Reports() {
 
       if (selectedMonthlyCow !== 'all') {
         // Individual Cow Monthly Report
-        const cow = animals.find(a => String(a.id) === String(selectedMonthlyCow))
+        const cow = unifiedCows.find(a => String(a.id) === String(selectedMonthlyCow))
         const cowName = cow?.name || 'Cow'
         const cowTag = cow?.tagNumber || 'N/A'
         const cowBreed = cow?.breed || 'Dairy'
@@ -140,11 +153,18 @@ export default function Reports() {
       } else {
         // All Cows Monthly Report (Cow-by-Cow Breakdown)
         const cowMap = {}
-        femaleCows.forEach(c => {
+        const cowsToReport = unifiedCows.filter(c => {
+          if (milkHerdFilter === 'active') return !c.isHistorical
+          if (milkHerdFilter === 'previous') return c.isHistorical
+          return true
+        })
+
+        cowsToReport.forEach(c => {
           cowMap[c.id] = {
             cowTag: c.tagNumber || 'N/A',
             cowName: c.name || 'Unnamed',
             breed: c.breed || 'Dairy',
+            isHistorical: c.isHistorical,
             dates: new Set(),
             morning: 0,
             afternoon: 0,
@@ -156,11 +176,13 @@ export default function Reports() {
 
         monthRecords.forEach(r => {
           if (!cowMap[r.animalId]) {
-            const animal = animals.find(a => String(a.id) === String(r.animalId))
+            const cow = unifiedCows.find(a => String(a.id) === String(r.animalId))
+            if (!cow && milkHerdFilter === 'active') return
             cowMap[r.animalId] = {
-              cowTag: animal?.tagNumber || 'N/A',
-              cowName: animal?.name || 'Unnamed',
-              breed: animal?.breed || 'Dairy',
+              cowTag: cow?.tagNumber || r.tagNumber || 'N/A',
+              cowName: cow?.name || r.animalName || 'Unnamed',
+              breed: cow?.breed || 'Dairy',
+              isHistorical: cow ? cow.isHistorical : true,
               dates: new Set(),
               morning: 0,
               afternoon: 0,
@@ -170,18 +192,21 @@ export default function Reports() {
             }
           }
           const cData = cowMap[r.animalId]
-          const amt = Number(r.amount) || 0
-          const camt = Number(r.calvesAmount) || 0
-          if (amt > 0) cData.dates.add(r.date)
-          if (r.session === 'Morning') cData.morning += amt
-          if (r.session === 'Afternoon') cData.afternoon += amt
-          if (r.session === 'Evening') cData.evening += amt
-          cData.calves += camt
-          cData.total += amt
+          if (cData) {
+            const amt = Number(r.amount) || 0
+            const camt = Number(r.calvesAmount) || 0
+            if (amt > 0) cData.dates.add(r.date)
+            if (r.session === 'Morning') cData.morning += amt
+            if (r.session === 'Afternoon') cData.afternoon += amt
+            if (r.session === 'Evening') cData.evening += amt
+            cData.calves += camt
+            cData.total += amt
+          }
         })
 
         let grandM = 0, grandA = 0, grandE = 0, grandTot = 0, grandC = 0, grandN = 0, grandRev = 0
         const rows = Object.values(cowMap)
+          .filter(c => c.isHistorical ? c.total > 0 : (milkHerdFilter === 'active' || c.total > 0))
           .sort((a, b) => b.total - a.total)
           .map(c => {
             const net = Math.max(0, c.total - c.calves)
@@ -256,7 +281,7 @@ export default function Reports() {
 
       if (selectedWeeklyCow !== 'all') {
         // Individual Cow Weekly Report
-        const cow = animals.find(a => String(a.id) === String(selectedWeeklyCow))
+        const cow = unifiedCows.find(a => String(a.id) === String(selectedWeeklyCow))
         const cowName = cow?.name || 'Cow'
         const cowTag = cow?.tagNumber || 'N/A'
 
@@ -297,7 +322,7 @@ export default function Reports() {
 
         rows.push({
           date: 'WEEK TOTAL',
-          dayName: `${cow.breed || 'Dairy'}`,
+          dayName: `${cow?.breed || 'Dairy'}`,
           morning: formatL(totM),
           afternoon: formatL(totA),
           evening: formatL(totE),
@@ -331,11 +356,18 @@ export default function Reports() {
       } else {
         // All Cows Weekly Report (Cow-by-Cow Breakdown)
         const cowMap = {}
-        femaleCows.forEach(c => {
+        const cowsToReport = unifiedCows.filter(c => {
+          if (milkHerdFilter === 'active') return !c.isHistorical
+          if (milkHerdFilter === 'previous') return c.isHistorical
+          return true
+        })
+
+        cowsToReport.forEach(c => {
           cowMap[c.id] = {
             cowTag: c.tagNumber || 'N/A',
             cowName: c.name || 'Unnamed',
             breed: c.breed || 'Dairy',
+            isHistorical: c.isHistorical,
             morning: 0,
             afternoon: 0,
             evening: 0,
@@ -346,11 +378,13 @@ export default function Reports() {
 
         weekRecords.forEach(r => {
           if (!cowMap[r.animalId]) {
-            const animal = animals.find(a => String(a.id) === String(r.animalId))
+            const cow = unifiedCows.find(a => String(a.id) === String(r.animalId))
+            if (!cow && milkHerdFilter === 'active') return
             cowMap[r.animalId] = {
-              cowTag: animal?.tagNumber || 'N/A',
-              cowName: animal?.name || 'Unnamed',
-              breed: animal?.breed || 'Dairy',
+              cowTag: cow?.tagNumber || r.tagNumber || 'N/A',
+              cowName: cow?.name || r.animalName || 'Unnamed',
+              breed: cow?.breed || 'Dairy',
+              isHistorical: cow ? cow.isHistorical : true,
               morning: 0,
               afternoon: 0,
               evening: 0,
@@ -359,17 +393,20 @@ export default function Reports() {
             }
           }
           const cData = cowMap[r.animalId]
-          const amt = Number(r.amount) || 0
-          const camt = Number(r.calvesAmount) || 0
-          if (r.session === 'Morning') cData.morning += amt
-          if (r.session === 'Afternoon') cData.afternoon += amt
-          if (r.session === 'Evening') cData.evening += amt
-          cData.calves += camt
-          cData.total += amt
+          if (cData) {
+            const amt = Number(r.amount) || 0
+            const camt = Number(r.calvesAmount) || 0
+            if (r.session === 'Morning') cData.morning += amt
+            if (r.session === 'Afternoon') cData.afternoon += amt
+            if (r.session === 'Evening') cData.evening += amt
+            cData.calves += camt
+            cData.total += amt
+          }
         })
 
         let grandM = 0, grandA = 0, grandE = 0, grandTot = 0, grandC = 0, grandN = 0, grandRev = 0
         const rows = Object.values(cowMap)
+          .filter(c => c.isHistorical ? c.total > 0 : (milkHerdFilter === 'active' || c.total > 0))
           .sort((a, b) => b.total - a.total)
           .map(c => {
             const net = Math.max(0, c.total - c.calves)
@@ -696,30 +733,69 @@ export default function Reports() {
       desc: 'Weekly milk records tracked and exported by cow name or all cows.', 
       action: (type) => handleExportMilk(type, 'weekly'),
       selector: (
-        <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Date in Week</label>
-            <input 
-              type="date" 
-              className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10" 
-              value={selectedWeeklyDate} 
-              onChange={e => setSelectedWeeklyDate(e.target.value)} 
-            />
+        <div className="mt-2.5 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Herd View:</span>
+            <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/10 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setMilkHerdFilter('all')}
+                className={`px-2 py-0.5 rounded ${milkHerdFilter === 'all' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setMilkHerdFilter('active')}
+                className={`px-2 py-0.5 rounded ${milkHerdFilter === 'active' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Active ({activeCows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMilkHerdFilter('previous')}
+                className={`px-2 py-0.5 rounded ${milkHerdFilter === 'previous' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Previous ({previousCows.length})
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Track By Cow</label>
-            <select
-              className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10"
-              value={selectedWeeklyCow}
-              onChange={e => setSelectedWeeklyCow(e.target.value)}
-            >
-              <option value="all">All Cows (Weekly Breakdown)</option>
-              {femaleCows.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name || 'Unnamed'} ({c.tagNumber})
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Date in Week</label>
+              <input 
+                type="date" 
+                className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10" 
+                value={selectedWeeklyDate} 
+                onChange={e => setSelectedWeeklyDate(e.target.value)} 
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Track By Cow</label>
+              <select
+                className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10"
+                value={selectedWeeklyCow}
+                onChange={e => setSelectedWeeklyCow(e.target.value)}
+              >
+                <option value="all">All Cows (Weekly Breakdown)</option>
+                <optgroup label="Active Herd (Current Cows)">
+                  {activeCows.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || 'Unnamed'} ({c.tagNumber})
+                    </option>
+                  ))}
+                </optgroup>
+                {previousCows.length > 0 && (
+                  <optgroup label="Previous Herd (Historical Records)">
+                    {previousCows.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name || 'Unnamed'} ({c.tagNumber})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
           </div>
         </div>
       )
@@ -729,30 +805,69 @@ export default function Reports() {
       desc: 'Monthly milk records tracked and exported by cow name or all cows.', 
       action: (type) => handleExportMilk(type, 'monthly'),
       selector: (
-        <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Month</label>
-            <input 
-              type="month" 
-              className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10" 
-              value={selectedMonthlyDate.slice(0, 7)} 
-              onChange={e => setSelectedMonthlyDate(e.target.value ? `${e.target.value}-01` : format(new Date(), 'yyyy-MM-dd'))} 
-            />
+        <div className="mt-2.5 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Herd View:</span>
+            <div className="flex bg-white/5 p-0.5 rounded-lg border border-white/10 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setMilkHerdFilter('all')}
+                className={`px-2 py-0.5 rounded ${milkHerdFilter === 'all' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setMilkHerdFilter('active')}
+                className={`px-2 py-0.5 rounded ${milkHerdFilter === 'active' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Active ({activeCows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMilkHerdFilter('previous')}
+                className={`px-2 py-0.5 rounded ${milkHerdFilter === 'previous' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Previous ({previousCows.length})
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Track By Cow</label>
-            <select
-              className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10"
-              value={selectedMonthlyCow}
-              onChange={e => setSelectedMonthlyCow(e.target.value)}
-            >
-              <option value="all">All Cows (Monthly Performance)</option>
-              {femaleCows.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name || 'Unnamed'} ({c.tagNumber})
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Select Month</label>
+              <input 
+                type="month" 
+                className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10" 
+                value={selectedMonthlyDate.slice(0, 7)} 
+                onChange={e => setSelectedMonthlyDate(e.target.value ? `${e.target.value}-01` : format(new Date(), 'yyyy-MM-dd'))} 
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Track By Cow</label>
+              <select
+                className="input-field mt-1 text-xs py-1.5 px-2 w-full border-white/10"
+                value={selectedMonthlyCow}
+                onChange={e => setSelectedMonthlyCow(e.target.value)}
+              >
+                <option value="all">All Cows (Monthly Performance)</option>
+                <optgroup label="Active Herd (Current Cows)">
+                  {activeCows.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || 'Unnamed'} ({c.tagNumber})
+                    </option>
+                  ))}
+                </optgroup>
+                {previousCows.length > 0 && (
+                  <optgroup label="Previous Herd (Historical Records)">
+                    {previousCows.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name || 'Unnamed'} ({c.tagNumber})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
           </div>
         </div>
       )
