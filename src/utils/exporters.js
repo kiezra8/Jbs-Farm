@@ -33,7 +33,14 @@ export function exportToPDF({ title, columns, rows, filename, groupBy, groupForm
     }, {})
 
     let currentY = 35
-    const sortedKeys = Object.keys(groupedData).sort((a, b) => new Date(b) - new Date(a))
+    const sortedKeys = Object.keys(groupedData).sort((a, b) => {
+      const da = new Date(a)
+      const db = new Date(b)
+      if (!isNaN(da.getTime()) && !isNaN(db.getTime()) && String(a).match(/\d{4}/)) {
+        return db - da
+      }
+      return String(a).localeCompare(String(b))
+    })
 
     sortedKeys.forEach((key) => {
       if (currentY > doc.internal.pageSize.height - 30) {
