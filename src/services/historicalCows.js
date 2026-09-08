@@ -4,16 +4,41 @@ import { doc, getDoc, setDoc, collection, query, where, getDocs, writeBatch } fr
 
 const SETTINGS_KEY = 'historicalCowNames'
 
+export const RECOVERED_HISTORICAL_COWS = {
+  '63152c99-0f06-487f-8129-7d14c2ddb262': { name: 'Tali', tagNumber: "JB's 001", breed: 'Friesian' },
+  '284857c2-ffa7-4434-8268-76cd1c7fd354': { name: 'Lucky', tagNumber: '012', breed: 'Friesian' },
+  'dd732116-d45e-4f6d-b79c-7a998eb4b2ed': { name: 'Kerry', tagNumber: '018', breed: 'Friesian' },
+  'c886d9da-0a13-4f9d-a748-9a20b3c2f10d': { name: 'Pearl', tagNumber: 'JB 003', breed: 'Friesian' },
+  '98763729-c2bc-4d15-83bd-abb20e54480c': { name: 'Mukonjo', tagNumber: '010', breed: 'Friesian' },
+  '1952681a-948f-40d7-be45-9a785ee85bdf': { name: 'Stacy', tagNumber: '008', breed: 'Friesian' },
+  'c92431c6-61eb-453e-aefb-0247592aaa51': { name: 'Queen', tagNumber: '061', breed: 'Friesian' },
+  '05d0911b-e583-4f80-b2e4-51a01cae6144': { name: 'Mulefu', tagNumber: '025', breed: 'Friesian' },
+  '64156c51-2558-4c4b-9125-a2eedab6d815': { name: 'Eliza', tagNumber: '019', breed: 'Friesian' },
+  'eea3f603-fbd4-4f6a-ab22-b5eec1fe4727': { name: 'Super', tagNumber: '027', breed: 'Friesian' },
+  '8dd35b73-bdb1-44a0-9b2b-c2e20f7939eb': { name: 'Angel', tagNumber: '026', breed: 'Friesian' },
+  '390eb867-dc40-4123-9fdf-12c188f83354': { name: 'Falcon', tagNumber: '020', breed: 'Friesian' },
+  '562ec4bf-7e2d-4097-81c6-1308d482da7a': { name: 'Lwasau', tagNumber: '024', breed: 'Friesian' },
+  '5ea7620b-ae6f-4f0c-85e5-f1ee2cba7dca': { name: 'Delta', tagNumber: '022', breed: 'Friesian' },
+  '35f96450-e4b4-4caf-b409-d5915b417796': { name: 'Mwinza', tagNumber: '015', breed: 'Friesian' },
+  'a67bf2fe-bac9-40b8-8e35-ca3216e50305': { name: 'Maggie', tagNumber: '007', breed: 'Friesian' },
+  'e5f5c527-e239-4e08-bf58-ce4c6d8c2a9a': { name: 'New Stock', tagNumber: '028', breed: 'Friesian' },
+  '9ac67bbf-b0f8-41de-8dec-3474513c097f': { name: 'Tina', tagNumber: "JB's 002", breed: 'Friesian' },
+  '5a586c21-44ae-4774-86f8-76ca201521e4': { name: 'Buntu', tagNumber: '013', breed: 'Friesian' },
+  '8dfb74c1-f493-4a86-9116-ce94122ba966': { name: 'Alpha', tagNumber: '021', breed: 'Friesian' },
+  '40b1f92a-9074-4600-8831-6610e4727d80': { name: 'Super 1', tagNumber: '01f', breed: 'Friesian' },
+  '58d18644-4c06-401d-abdc-4e36d96ca100': { name: 'Blackie', tagNumber: '004', breed: 'Friesian' }
+}
+
 /**
  * Load the mapping of historical cow IDs to their names and tags.
- * Checks local IndexedDB settings first, then Firestore settings document.
+ * Pre-seeds with recovered genuine farm cow names, then merges with local/cloud mappings.
  */
 export async function loadHistoricalCowNames() {
-  let mapping = {}
+  let mapping = { ...RECOVERED_HISTORICAL_COWS }
   try {
     const localSetting = await db.settings.get(SETTINGS_KEY)
     if (localSetting?.value) {
-      mapping = { ...localSetting.value }
+      mapping = { ...mapping, ...localSetting.value }
     }
   } catch (e) {
     console.warn('Could not read historicalCowNames from local db:', e)
@@ -163,9 +188,11 @@ export function buildUnifiedCowList(animals = [], records = [], historicalNames 
   const sortedHistorical = Array.from(historicalMap.values()).sort((a, b) => b.total - a.total)
 
   sortedHistorical.forEach((item, idx) => {
+    const recovered = RECOVERED_HISTORICAL_COWS[item.id]
     const custom = historicalNames[item.id]
-    const assignedName = custom?.name || item.sampleName
-    const assignedTag = custom?.tagNumber || item.sampleTag
+    const assignedName = custom?.name || item.sampleName || recovered?.name
+    const assignedTag = custom?.tagNumber || item.sampleTag || recovered?.tagNumber
+    const assignedBreed = custom?.breed || recovered?.breed || 'Friesian'
     const isNamed = Boolean(assignedName)
 
     unified.push({
@@ -173,7 +200,7 @@ export function buildUnifiedCowList(animals = [], records = [], historicalNames 
       animalId: item.id,
       name: assignedName || `Previous Cow #${idx + 1}`,
       tagNumber: assignedTag || `OLD-${item.id.slice(0, 4).toUpperCase()}`,
-      breed: custom?.breed || 'Dairy',
+      breed: assignedBreed,
       isHistorical: true,
       isNamed,
       totalProduction: item.total,
