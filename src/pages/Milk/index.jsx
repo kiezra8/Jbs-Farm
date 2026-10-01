@@ -22,7 +22,7 @@ export default function Milk() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [editingRow, setEditingRow] = useState(null)
 
-  const initialForm = { animalId: '', date: format(new Date(), 'yyyy-MM-dd'), session: 'Morning', amount: '', calvesAmount: '' }
+  const initialForm = { animalId: '', date: format(new Date(), 'yyyy-MM-dd'), morning: '', afternoon: '', evening: '', calvesAmount: '', focusSession: 'morning' }
   const [formData, setFormData] = useState(initialForm)
   const [selectedDateFilter, setSelectedDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedWeekDate, setSelectedWeekDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -749,86 +749,85 @@ export default function Milk() {
   }
 
   // ─── Modal & Form Handlers ──────────────────────────────────────────────────
-  const editRowRecord = (row) => {
+  const editRowRecord = (row, focusSession = 'morning') => {
     setEditingRow(row)
-    const existingRecord = row.records['Morning']
-    if (existingRecord) {
-      setEditingRecord(existingRecord)
-      setFormData({
-        animalId: existingRecord.animalId,
-        date: existingRecord.date,
-        session: 'Morning',
-        amount: String(existingRecord.amount),
-        calvesAmount: String(existingRecord.calvesAmount || '')
-      })
-    } else {
-      setEditingRecord(null)
-      setFormData({
-        animalId: row.animalId,
-        date: selectedDateFilter,
-        session: 'Morning',
-        amount: '',
-        calvesAmount: ''
-      })
-    }
+    setEditingRecord(null)
+    setFormData({
+      animalId: row.animalId,
+      tagNumber: row.tagNumber,
+      animalName: row.animalName,
+      date: selectedDateFilter,
+      morning: row.Morning > 0 ? String(row.Morning) : '',
+      afternoon: row.Afternoon > 0 ? String(row.Afternoon) : '',
+      evening: row.Evening > 0 ? String(row.Evening) : '',
+      calvesAmount: row.calvesAmount > 0 ? String(row.calvesAmount) : '',
+      focusSession
+    })
     setIsModalOpen(true)
   }
 
   const editSessionRecord = (row, session) => {
-    setEditingRow(row)
-    const existingRecord = row.records[session]
-    if (existingRecord) {
-      setEditingRecord(existingRecord)
-      setFormData({
-        animalId: existingRecord.animalId,
-        date: existingRecord.date,
-        session: session,
-        amount: String(existingRecord.amount),
-        calvesAmount: String(existingRecord.calvesAmount || '')
-      })
-    } else {
-      setEditingRecord(null)
-      setFormData({
-        animalId: row.animalId,
-        date: selectedDateFilter,
-        session: session,
-        amount: '',
-        calvesAmount: ''
-      })
-    }
-    setIsModalOpen(true)
+    editRowRecord(row, session.toLowerCase())
   }
 
-  const handleSessionChange = (e) => {
-    const session = e.target.value
-    const existingRecord = editingRow?.records?.[session]
-    if (existingRecord) {
-      setEditingRecord(existingRecord)
-      setFormData({
-        ...formData,
-        session,
-        amount: String(existingRecord.amount),
-        calvesAmount: String(existingRecord.calvesAmount || '')
-      })
-    } else {
-      setEditingRecord(null)
-      setFormData({
-        ...formData,
-        session,
-        amount: '',
-        calvesAmount: ''
-      })
+  const selectCowForYield = (c) => {
+    const targetDate = formData.date || selectedDateFilter
+    const existingMorning = records.find(r => String(r.animalId) === String(c.id) && r.date === targetDate && r.session === 'Morning')
+    const existingAfternoon = records.find(r => String(r.animalId) === String(c.id) && r.date === targetDate && r.session === 'Afternoon')
+    const existingEvening = records.find(r => String(r.animalId) === String(c.id) && r.date === targetDate && r.session === 'Evening')
+    const totalCalves = (existingMorning?.calvesAmount || 0) + (existingAfternoon?.calvesAmount || 0) + (existingEvening?.calvesAmount || 0)
+
+    setFormData({
+      ...formData,
+      animalId: c.id,
+      morning: existingMorning?.amount ? String(existingMorning.amount) : '',
+      afternoon: existingAfternoon?.amount ? String(existingAfternoon.amount) : '',
+      evening: existingEvening?.amount ? String(existingEvening.amount) : '',
+      calvesAmount: totalCalves > 0 ? String(totalCalves) : ''
+    })
+    setCowTypeQuery('')
+  }
+
+  const handleDateChangeInModal = (newDate) => {
+    if (!formData.animalId) {
+      setFormData({ ...formData, date: newDate })
+      return
     }
+    const existingMorning = records.find(r => String(r.animalId) === String(formData.animalId) && r.date === newDate && r.session === 'Morning')
+    const existingAfternoon = records.find(r => String(r.animalId) === String(formData.animalId) && r.date === newDate && r.session === 'Afternoon')
+    const existingEvening = records.find(r => String(r.animalId) === String(formData.animalId) && r.date === newDate && r.session === 'Evening')
+    const totalCalves = (existingMorning?.calvesAmount || 0) + (existingAfternoon?.calvesAmount || 0) + (existingEvening?.calvesAmount || 0)
+
+    setFormData({
+      ...formData,
+      date: newDate,
+      morning: existingMorning?.amount ? String(existingMorning.amount) : '',
+      afternoon: existingAfternoon?.amount ? String(existingAfternoon.amount) : '',
+      evening: existingEvening?.amount ? String(existingEvening.amount) : '',
+      calvesAmount: totalCalves > 0 ? String(totalCalves) : ''
+    })
   }
 
   const SessionCell = ({ val, row, session }) => {
     if (val > 0) {
-      return <span className="text-white font-medium">{formatLiters(val)}</span>
+      return (
+        <button 
+          type="button"
+          onClick={() => editSessionRecord(row, session)} 
+          className="text-white font-medium hover:text-emerald-400 px-2 py-1 -mx-2 rounded hover:bg-white/10 transition-all flex items-center gap-1.5 group text-left cursor-pointer"
+          title={`Click to edit ${session} milking time (${formatLiters(val)})`}
+        >
+          <span>{formatLiters(val)}</span>
+          <Edit2 size={11} className="opacity-0 group-hover:opacity-100 text-emerald-400 transition-opacity" />
+        </button>
+      )
     }
     return (
       <button 
+        type="button"
         onClick={() => editSessionRecord(row, session)} 
         className="text-xs text-slate-500 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors flex items-center gap-1"
+        title={`Add ${session} yield`}
       >
         <Plus size={12} /> Add
       </button>
@@ -841,20 +840,64 @@ export default function Milk() {
       alert('Please select a cow by typing its name or tag')
       return
     }
-    const cow = animals.find(a => String(a.id) === String(formData.animalId))
-    const payload = { 
-      ...formData, 
-      animalId: formData.animalId,
-      animalName: cow?.name || formData.animalName || 'Cow',
-      tagNumber: cow?.tagNumber || formData.tagNumber || '',
-      amount: Number(formData.amount) || 0, 
-      calvesAmount: Number(formData.calvesAmount) || 0 
+    const cow = unifiedCows.find(a => String(a.id) === String(formData.animalId)) || animals.find(a => String(a.id) === String(formData.animalId))
+    const tagNumber = cow?.tagNumber || formData.tagNumber || ''
+    const animalName = cow?.name || formData.animalName || 'Cow'
+    const targetDate = formData.date || selectedDateFilter
+
+    const sessionInputs = [
+      { session: 'Morning', val: Number(formData.morning) || 0 },
+      { session: 'Afternoon', val: Number(formData.afternoon) || 0 },
+      { session: 'Evening', val: Number(formData.evening) || 0 }
+    ]
+
+    const totalCalves = Number(formData.calvesAmount) || 0
+
+    // Filter existing records for this cow on this date
+    const cowDateRecords = records.filter(r => String(r.animalId) === String(formData.animalId) && r.date === targetDate)
+
+    let calvesAssigned = false
+    for (const item of sessionInputs) {
+      const existing = cowDateRecords.filter(r => r.session === item.session)
+      const calvesForThis = !calvesAssigned && item.val > 0 ? totalCalves : 0
+      if (item.val > 0) calvesAssigned = true
+
+      if (item.val > 0) {
+        if (existing.length > 0) {
+          // Update primary existing record with correct amount
+          await updateRecord(existing[0].id, {
+            amount: item.val,
+            calvesAmount: calvesForThis,
+            animalId: formData.animalId,
+            tagNumber,
+            animalName,
+            date: targetDate,
+            session: item.session
+          })
+          // Clean up any extra duplicate records from past accidental double-entries
+          for (let i = 1; i < existing.length; i++) {
+            await deleteRecord(existing[i].id)
+          }
+        } else {
+          // Add new record for this session
+          await addRecord({
+            animalId: formData.animalId,
+            tagNumber,
+            animalName,
+            date: targetDate,
+            session: item.session,
+            amount: item.val,
+            calvesAmount: calvesForThis
+          })
+        }
+      } else {
+        // If amount was cleared or set to 0, clean up any existing records for that session
+        for (const r of existing) {
+          await deleteRecord(r.id)
+        }
+      }
     }
-    if (editingRecord) {
-      await updateRecord(editingRecord.id, payload)
-    } else {
-      await addRecord(payload)
-    }
+
     setIsModalOpen(false)
     setEditingRecord(null)
     setEditingRow(null)
@@ -980,7 +1023,7 @@ export default function Milk() {
                  title="Select Date"
                  required
               />
-              <button className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5" onClick={() => { setEditingRow(null); setEditingRecord(null); setFormData(initialForm); setIsModalOpen(true) }}>
+              <button className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5" onClick={() => { setEditingRow(null); setEditingRecord(null); setFormData({ ...initialForm, date: selectedDateFilter }); setIsModalOpen(true) }}>
                 <Plus size={16} /> Add Yield
               </button>
             </>
@@ -1736,7 +1779,7 @@ export default function Milk() {
       )}
 
       {/* Modal for adding / editing yield */}
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }} title={editingRow && formData.animalId ? `Edit Yield: ${animals.find(a => String(a.id) === String(formData.animalId))?.tagNumber || 'Cow'}` : "Add Milk Yield"}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }} title={editingRow && formData.animalId ? `Edit Milk Yield: ${editingRow.tagNumber} (${editingRow.animalName})` : formData.animalId ? `Record Milk Yield: ${selectedCowObj?.tagNumber || ''} (${selectedCowObj?.name || 'Cow'})` : "Add Milk Yield"}>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -1770,7 +1813,7 @@ export default function Milk() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setFormData({ ...formData, animalId: '' }); setCowTypeQuery('') }}
+                    onClick={() => { setFormData({ ...formData, animalId: '', morning: '', afternoon: '', evening: '', calvesAmount: '' }); setCowTypeQuery('') }}
                     className="btn-secondary text-xs px-2.5 py-1 text-slate-300 hover:text-white"
                   >
                     Change
@@ -1801,10 +1844,7 @@ export default function Milk() {
                       filteredCowsForSelect.map(c => (
                         <div
                           key={c.id}
-                          onClick={() => {
-                            setFormData({ ...formData, animalId: c.id })
-                            setCowTypeQuery('')
-                          }}
+                          onClick={() => selectCowForYield(c)}
                           className="flex items-center justify-between p-2 rounded-lg hover:bg-emerald-500/15 cursor-pointer transition-colors"
                         >
                           <div className="flex items-center gap-2">
@@ -1825,15 +1865,102 @@ export default function Milk() {
                 </div>
               )}
             </div>
-            <div><label className="block text-xs font-medium text-slate-400 mb-1">Date *</label><input required type="date" className="input-field" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Session *</label>
-              <select required className="input-field" value={formData.session} onChange={editingRow ? handleSessionChange : e => setFormData({...formData, session: e.target.value})}>
-                <option>Morning</option><option>Afternoon</option><option>Evening</option>
-              </select>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-400 mb-1">Date *</label>
+              <input
+                required
+                type="date"
+                className="input-field"
+                value={formData.date}
+                onChange={e => handleDateChangeInModal(e.target.value)}
+              />
             </div>
-            <div className="col-span-1"><label className="block text-xs font-medium text-slate-400 mb-1">Total Amount (Liters) *</label><input required type="number" step="0.1" className="input-field" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} /></div>
-            <div className="col-span-1"><label className="block text-xs font-medium text-slate-400 mb-1">Given to Calves (L)</label><input type="number" step="0.1" className="input-field" value={formData.calvesAmount} onChange={e => setFormData({...formData, calvesAmount: e.target.value})} /></div>
+
+            {formData.animalId && (
+              <>
+                <div className="col-span-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-slate-300">Milking Times (Direct Yield Entry)</label>
+                    <span className="text-[11px] text-slate-400">Directly set Morning, Afternoon, or Evening</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-xl focus-within:ring-2 focus-within:ring-emerald-400 transition-all">
+                      <label className="block text-xs font-bold text-emerald-300 mb-1 flex items-center justify-between">
+                        <span>🌅 Morning</span>
+                        <span className="text-[10px] text-emerald-400/80 font-normal">Liters</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="0.0"
+                        className="w-full bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-white font-semibold text-sm outline-none focus:border-emerald-400"
+                        value={formData.morning}
+                        onChange={e => setFormData({ ...formData, morning: e.target.value })}
+                        autoFocus={formData.focusSession === 'morning'}
+                      />
+                    </div>
+
+                    <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl focus-within:ring-2 focus-within:ring-amber-400 transition-all">
+                      <label className="block text-xs font-bold text-amber-300 mb-1 flex items-center justify-between">
+                        <span>☀️ Afternoon</span>
+                        <span className="text-[10px] text-amber-400/80 font-normal">Liters</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="0.0"
+                        className="w-full bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-white font-semibold text-sm outline-none focus:border-amber-400"
+                        value={formData.afternoon}
+                        onChange={e => setFormData({ ...formData, afternoon: e.target.value })}
+                        autoFocus={formData.focusSession === 'afternoon'}
+                      />
+                    </div>
+
+                    <div className="bg-blue-500/10 border border-blue-500/30 p-2.5 rounded-xl focus-within:ring-2 focus-within:ring-blue-400 transition-all">
+                      <label className="block text-xs font-bold text-blue-300 mb-1 flex items-center justify-between">
+                        <span>🌙 Evening</span>
+                        <span className="text-[10px] text-blue-400/80 font-normal">Liters</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="0.0"
+                        className="w-full bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-white font-semibold text-sm outline-none focus:border-blue-400"
+                        value={formData.evening}
+                        onChange={e => setFormData({ ...formData, evening: e.target.value })}
+                        autoFocus={formData.focusSession === 'evening'}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="block text-xs font-medium text-slate-400 mb-1">Given to Calves (L)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    className="input-field"
+                    value={formData.calvesAmount}
+                    onChange={e => setFormData({ ...formData, calvesAmount: e.target.value })}
+                    placeholder="0.0"
+                  />
+                </div>
+
+                <div className="col-span-1 flex flex-col justify-end">
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                    <span className="text-xs text-slate-400">Total Day Yield:</span>
+                    <span className="text-base font-bold text-emerald-400">
+                      {((Number(formData.morning) || 0) + (Number(formData.afternoon) || 0) + (Number(formData.evening) || 0)).toFixed(1)} L
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
             <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }}>Cancel</button>

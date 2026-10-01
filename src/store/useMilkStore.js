@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { db } from '../db/schema'
 import { format, subDays } from 'date-fns'
+import { getFirestoreDb } from '../services/syncEngine'
+import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 
 export const useMilkStore = create((set, get) => ({
   records: [],
@@ -15,20 +17,46 @@ export const useMilkStore = create((set, get) => ({
   addRecord: async (data) => {
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
-    await db.milkRecords.add({ ...data, id, createdAt: now })
-    const record = await db.milkRecords.get(id)
+    const record = { ...data, id, createdAt: now, updatedAt: now }
+    await db.milkRecords.add(record)
+    try {
+      const firestore = getFirestoreDb()
+      if (firestore) {
+        await setDoc(doc(firestore, 'milkRecords', String(id)), record, { merge: true })
+      }
+    } catch (e) {
+      console.warn('Firestore direct add milk record warning:', e)
+    }
     set(s => ({ records: [record, ...s.records] }))
     return record
   },
 
   updateRecord: async (id, data) => {
-    await db.milkRecords.update(id, data)
+    const now = new Date().toISOString()
+    await db.milkRecords.update(id, { ...data, updatedAt: now })
     const record = await db.milkRecords.get(id)
+    try {
+      const firestore = getFirestoreDb()
+      if (firestore && record) {
+        await setDoc(doc(firestore, 'milkRecords', String(id)), record, { merge: true })
+      }
+    } catch (e) {
+      console.warn('Firestore direct update milk record warning:', e)
+    }
     set(s => ({ records: s.records.map(r => r.id === id ? record : r) }))
+    return record
   },
 
   deleteRecord: async (id) => {
     await db.milkRecords.delete(id)
+    try {
+      const firestore = getFirestoreDb()
+      if (firestore) {
+        await deleteDoc(doc(firestore, 'milkRecords', String(id)))
+      }
+    } catch (e) {
+      console.warn('Firestore direct delete milk record warning:', e)
+    }
     set(s => ({ records: s.records.filter(r => r.id !== id) }))
   },
 

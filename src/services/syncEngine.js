@@ -248,7 +248,9 @@ export function setupDexieHooks() {
     db[table].hook('creating', function (primKey, obj, trans) {
       this.onsuccess = function (generatedKey) {
         if (skipHooks[table]) return
-        addToSyncQueue(table, 'upsert', generatedKey, { ...obj, id: generatedKey })
+        setTimeout(() => {
+          addToSyncQueue(table, 'upsert', generatedKey, { ...obj, id: generatedKey })
+        }, 0)
       }
     })
 
@@ -258,7 +260,9 @@ export function setupDexieHooks() {
       const fullRecord = { ...obj, ...mods }   // reconstruct the updated record
       this.onsuccess = function () {
         if (skipHooks[table]) return
-        addToSyncQueue(table, 'upsert', primKey, fullRecord)
+        setTimeout(() => {
+          addToSyncQueue(table, 'upsert', primKey, fullRecord)
+        }, 0)
       }
     })
 
@@ -267,10 +271,14 @@ export function setupDexieHooks() {
       if (skipHooks[table]) return
       if (trans && typeof trans.on === 'function') {
         trans.on('complete', () => {
-          addToSyncQueue(table, 'delete', primKey, null)
+          setTimeout(() => {
+            addToSyncQueue(table, 'delete', primKey, null)
+          }, 0)
         })
       } else {
-        addToSyncQueue(table, 'delete', primKey, null)
+        setTimeout(() => {
+          addToSyncQueue(table, 'delete', primKey, null)
+        }, 0)
       }
     })
   })

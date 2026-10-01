@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { db } from '../db/schema'
 import { getFirestoreDb } from '../services/syncEngine'
-import { doc, deleteDoc } from 'firebase/firestore'
+import { doc, deleteDoc, setDoc } from 'firebase/firestore'
 
 export const useAnimalStore = create((set, get) => ({
   animals: [],
@@ -19,8 +19,17 @@ export const useAnimalStore = create((set, get) => ({
   addAnimal: async (data) => {
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
-    await db.animals.add({ ...data, id, createdAt: now, updatedAt: now })
+    const animalData = { ...data, id, createdAt: now, updatedAt: now }
+    await db.animals.add(animalData)
     const animal = await db.animals.get(id)
+    try {
+      const firestore = getFirestoreDb()
+      if (firestore && animal) {
+        await setDoc(doc(firestore, 'animals', String(id)), animal, { merge: true })
+      }
+    } catch (e) {
+      console.warn('Firestore direct add animal warning:', e)
+    }
     set(s => ({ animals: [...s.animals, animal] }))
     return animal
   },
@@ -29,6 +38,14 @@ export const useAnimalStore = create((set, get) => ({
     const now = new Date().toISOString()
     await db.animals.update(id, { ...data, updatedAt: now })
     const animal = await db.animals.get(id)
+    try {
+      const firestore = getFirestoreDb()
+      if (firestore && animal) {
+        await setDoc(doc(firestore, 'animals', String(id)), animal, { merge: true })
+      }
+    } catch (e) {
+      console.warn('Firestore direct update animal warning:', e)
+    }
     set(s => ({ animals: s.animals.map(a => a.id === id ? animal : a) }))
     return animal
   },

@@ -16,6 +16,7 @@ export const formatAge = (val) => {
   if (['Heifer', 'Bullock', 'Bull', 'Cow'].includes(val)) return val
   const months = Number(val)
   if (isNaN(months)) return String(val)
+  if (months === 0) return 'Cow'
   if (months < 12) return `${months}mo`
   const yrs = Math.floor(months / 12)
   const mo = months % 12
