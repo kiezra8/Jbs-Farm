@@ -724,16 +724,20 @@ export default function Sacco() {
   const hasSavingCategory = (catVal) => true
 
   const matchesFilter = (m) => {
-    const matchesSearch = (m.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (m.phone || '').includes(searchQuery) || 
-                          (m.nin || '').toLowerCase().includes(searchQuery.toLowerCase())
+    const cleanQ = searchQuery.toLowerCase().trim()
+    const matchesSearch = (m.name || '').toLowerCase().includes(cleanQ) || 
+                          (m.phone || '').includes(cleanQ) || 
+                          (m.nin || '').toLowerCase().includes(cleanQ)
     
     let matchesCategory = true
-    const cats = Array.isArray(m.category) ? m.category : [m.category || 'Saving Member']
+    const cats = Array.isArray(m.category) ? [...m.category] : [m.category || 'Saving Member']
+    const hasInv = investors.some(inv => inv.memberId === m.id || (m.name && inv.name && m.name.toLowerCase() === inv.name.toLowerCase()))
+    if (hasInv && !cats.includes('Investor')) cats.push('Investor')
+
     if (categoryFilter === 'Pioneer') {
       matchesCategory = cats.includes('Pioneer')
     } else if (categoryFilter === 'Investor') {
-      matchesCategory = cats.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c))
+      matchesCategory = cats.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || hasInv
     } else if (categoryFilter === 'Saving Member') {
       // All members are saving members
       matchesCategory = true
@@ -754,11 +758,36 @@ export default function Sacco() {
       const liveShareCount = shareObj?.shareCount ?? m.noOfShares ?? 1
       const savingObj = savings.find(s => s.memberId === m.id)
       const liveSavings = savingObj?.savingAmount ?? m.savings ?? 0
-      return { ...m, noOfShares: liveShareCount, savings: liveSavings, index: i + 1 }
+
+      // Link investor data
+      const invObj = investors.find(inv => inv.memberId === m.id || (m.name && inv.name && m.name.toLowerCase() === inv.name.toLowerCase()))
+      const investmentAmount = Number(invObj?.investmentAmount || m.investmentAmount) || 0
+      const isInvestor = (Array.isArray(m.category) ? m.category : [m.category || '']).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || !!invObj || investmentAmount > 0
+
+      const cats = Array.isArray(m.category) ? [...m.category] : [m.category || 'Saving Member']
+      if (isInvestor && !cats.includes('Investor')) cats.push('Investor')
+      if (invObj?.investorType && !cats.includes(invObj.investorType)) cats.push(invObj.investorType)
+
+      return { 
+        ...m, 
+        category: cats,
+        noOfShares: liveShareCount, 
+        savings: liveSavings, 
+        investmentAmount,
+        investorType: invObj?.investorType || (isInvestor ? 'Money Maker' : null),
+        isInvestor,
+        index: i + 1 
+      }
     })
 
   const pioneerMembersCount = members.filter(m => (Array.isArray(m.category) ? m.category : [m.category || '']).includes('Pioneer')).length
-  const investorMembersCount = members.filter(m => (Array.isArray(m.category) ? m.category : [m.category || '']).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c))).length
+  const investorMembersCount = members.filter(m => {
+    // Use enriched member data (isInvestor flag set by loadSaccoData)
+    if (m.isInvestor) return true
+    const cats = Array.isArray(m.category) ? m.category : [m.category || '']
+    const hasInv = investors.some(inv => inv.memberId === m.id || (m.name && inv.name && m.name.toLowerCase() === inv.name.toLowerCase()))
+    return cats.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || hasInv
+  }).length
 
   const sharesData = members
     .filter(m => hasSavingCategory(m.category))
@@ -805,12 +834,18 @@ export default function Sacco() {
   const detailedInvestors = investors
     .filter(i => (Number(i.investmentAmount) || 0) > 0)
     .map(i => {
+      // Resolve member: first by memberId, then by name match
       const member = members.find(m => m.id === i.memberId)
+        || (i.name ? members.find(m => m.name && m.name.toLowerCase() === i.name.toLowerCase()) : null)
       const rawType = i.investorType || i.category || (Array.isArray(member?.category) && member.category.includes('New Farmer') ? 'New Farmer' : 'Money Maker')
       const investorType = String(rawType).toUpperCase().includes('FARM') ? 'New Farmer' : 'Money Maker'
+      // Always use the resolved member's id as memberId for modal linking
+      const resolvedMemberId = member?.id || i.memberId
       return {
         ...i,
-        name: member?.name || i.name || 'Unknown',
+        name: member?.name || i.name || 'Investor',
+        memberId: resolvedMemberId,
+        _investorRecordId: i.id, // keep original investor record ID
         memberCategory: member?.category || i.category || investorType,
         investorType
       }
@@ -848,7 +883,31 @@ export default function Sacco() {
         {val}
       </button>
     )},
-    { key: 'total', label: 'Total Paid', render: (val) => <span className="text-emerald-400 font-bold">{formatUGX(val)}</span> },
+    { key: 'total', label: 'Total Paid', render: (val, row) => {
+      const savingsTotal = Number(val) || 0
+      const invTotal = Number(row.investmentAmount) || 0
+      const grandTotal = savingsTotal + invTotal
+      return (
+        <div>
+          <span className="text-emerald-400 font-bold">{formatUGX(grandTotal)}</span>
+          {invTotal > 0 && (
+            <p className="text-[9px] text-purple-300 font-medium">
+              {savingsTotal > 0 ? `Savings: ${formatUGX(savingsTotal)} | ` : ''}Inv: {formatUGX(invTotal)}
+            </p>
+          )}
+        </div>
+      )
+    }},
+    { key: 'investmentAmount', label: 'Invested', render: (val, row) => (
+      row.investmentAmount > 0 ? (
+        <div className="flex flex-col">
+          <span className="text-purple-400 font-bold">{formatUGX(row.investmentAmount)}</span>
+          <span className="text-[10px] text-purple-300/80 font-medium">{row.investorType || 'Investor'}</span>
+        </div>
+      ) : (
+        <span className="text-slate-500 text-xs">—</span>
+      )
+    )},
     { key: 'shares', label: 'Shares Amt', render: (val) => formatUGX(val) },
     { key: 'admin', label: 'Admin Fee', render: (val) => formatUGX(val) },
     { key: 'noOfShares', label: 'No. Shares', render: (val) => <span className="font-semibold text-white">{val}</span> },
@@ -856,6 +915,8 @@ export default function Sacco() {
       const colors = {
         'Pioneer': 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
         'Investor': 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
+        'Money Maker': 'bg-amber-500/10 text-amber-300 border border-amber-500/20',
+        'New Farmer': 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20',
         'Saving Member': 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
       }
       const cats = Array.isArray(val) ? val : [val || 'Saving Member']
@@ -1298,6 +1359,31 @@ export default function Sacco() {
           </div>
         </div>
       )}
+
+      {/* Mobile Horizontal Tabs Navigation (visible on mobile / small devices) */}
+      <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-white/10">
+        {[
+          { id: 'members', label: `Members (${filteredMembers.length})`, icon: Users },
+          { id: 'shares', label: `Shares (${sharesData.length})`, icon: Coins },
+          { id: 'savings', label: `Savings (${savingsData.length})`, icon: PiggyBank },
+          { id: 'investors', label: `Investors (${investorsData.length})`, icon: TrendingUp },
+          { id: 'accounts', label: 'Accounts', icon: Wallet },
+          { id: 'finance', label: 'Petty Cash', icon: DollarSign },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeTab === id
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-sm shadow-emerald-950/40'
+                : 'bg-white/5 text-slate-400 hover:text-white border border-transparent'
+            }`}
+          >
+            <Icon size={14} />
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Side Navigation */}

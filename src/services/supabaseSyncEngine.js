@@ -38,6 +38,37 @@ let realtimeChannels = []
 let skipHooks = {}
 let isSyncingAll = false
 
+
+function cleanCategory(cat) {
+  if (!cat) return ['Saving Member']
+  let list = []
+  if (Array.isArray(cat)) {
+    for (const item of cat) {
+      if (typeof item === 'string' && (item.startsWith('[') || item.includes('"'))) {
+        try {
+          const parsed = JSON.parse(item)
+          if (Array.isArray(parsed)) list.push(...parsed)
+          else list.push(parsed)
+        } catch (_) { list.push(item) }
+      } else if (typeof item === 'string' && item.includes(',')) {
+        list.push(...item.split(',').map(s => s.trim()))
+      } else { list.push(item) }
+    }
+  } else if (typeof cat === 'string') {
+    try {
+      if (cat.trim().startsWith('[')) {
+        const parsed = JSON.parse(cat)
+        if (Array.isArray(parsed)) list.push(...parsed)
+        else list.push(parsed)
+      } else {
+        list.push(...cat.split(',').map(s => s.trim()))
+      }
+    } catch (_) { list.push(cat) }
+  }
+  const cleaned = Array.from(new Set(list.map(s => String(s).trim()).filter(Boolean)))
+  return cleaned.length > 0 ? cleaned : ['Saving Member']
+}
+
 // ─── Pull ALL Sacco Data from Supabase into local IndexedDB ─────────────────
 export async function fetchAllSaccoFromSupabase() {
   if (isSyncingAll) return
@@ -76,20 +107,11 @@ export async function fetchAllSaccoFromSupabase() {
 
           from += PAGE_SIZE
         }
-
         if (allData.length > 0) {
           const cleanData = allData.map(record => {
             const cleanRecord = { ...record }
-            if (dexieTable === 'saccoMembers' && typeof cleanRecord.category === 'string') {
-              try {
-                if (cleanRecord.category.trim().startsWith('[')) {
-                  cleanRecord.category = JSON.parse(cleanRecord.category)
-                } else {
-                  cleanRecord.category = cleanRecord.category.split(',').map(c => c.trim()).filter(Boolean)
-                }
-              } catch (_) {
-                cleanRecord.category = [cleanRecord.category]
-              }
+            if (dexieTable === 'saccoMembers') {
+              cleanRecord.category = cleanCategory(cleanRecord.category)
             }
             return cleanRecord
           })

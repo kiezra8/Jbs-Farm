@@ -17,9 +17,11 @@ async function removeRecordFromSupabase(table, id) {
   } catch (_) {}
 }
 
-const cleanName = (name) => {
+export const cleanName = (name) => {
   if (!name) return '';
-  let n = name;
+  let n = String(name);
+  // Strip zero-width, byte order mark, and invisible unicode characters
+  n = n.replace(/[\u200B-\u200D\uFEFF\u2060\u00A0]/g, '');
   n = n.replace(/✅/g, '');
   n = n.replace(/bal\.?\s*\d+[\d\.,]*\s*[m]?(illion)?/gi, '');
   n = n.replace(/\b\d+[\d\.,]*\s*m\b/gi, '');
@@ -32,25 +34,62 @@ const cleanName = (name) => {
   return n.trim();
 };
 
-const getSortedWords = (name) => {
-  return cleanName(name).toLowerCase().split(' ').filter(w => w.length > 1).sort().join(' ');
+export const normalizeCategoryArray = (cat) => {
+  if (!cat) return ['Saving Member'];
+  let list = [];
+  if (Array.isArray(cat)) {
+    for (const item of cat) {
+      if (typeof item === 'string' && (item.startsWith('[') || item.includes('"'))) {
+        try {
+          const parsed = JSON.parse(item);
+          if (Array.isArray(parsed)) list.push(...parsed);
+          else list.push(parsed);
+        } catch (_) {
+          list.push(item);
+        }
+      } else if (typeof item === 'string' && item.includes(',')) {
+        list.push(...item.split(',').map(s => s.trim()));
+      } else {
+        list.push(item);
+      }
+    }
+  } else if (typeof cat === 'string') {
+    try {
+      if (cat.trim().startsWith('[')) {
+        const parsed = JSON.parse(cat);
+        if (Array.isArray(parsed)) list.push(...parsed);
+        else list.push(parsed);
+      } else {
+        list.push(...cat.split(',').map(s => s.trim()));
+      }
+    } catch (_) {
+      list.push(cat);
+    }
+  }
+  const cleaned = Array.from(new Set(list.map(s => String(s).trim()).filter(Boolean)));
+  return cleaned.length > 0 ? cleaned : ['Saving Member'];
 };
 
-const findMatchingMember = (members, targetName) => {
-  if (!targetName) return null;
-  const targetCleaned = cleanName(targetName);
+export const getSortedWords = (name) => {
+  const cleaned = cleanName(name).toLowerCase().replace(/\b\d+\b/g, '');
+  return cleaned.split(' ').filter(w => w.length > 1).sort().join(' ');
+};
+
+export const findMatchingMember = (members, targetName) => {
+  if (!targetName || !Array.isArray(members)) return null;
+  const targetCleaned = cleanName(targetName).toLowerCase();
   const targetSorted = getSortedWords(targetName);
 
   return members.find(m => {
-    if (!m.name) return false;
-    const mCleaned = cleanName(m.name);
-    if (mCleaned.toLowerCase() === targetCleaned.toLowerCase()) return true;
+    if (!m || !m.name) return false;
+    const mCleaned = cleanName(m.name).toLowerCase();
+    if (mCleaned === targetCleaned && targetCleaned.length > 0) return true;
 
     const mSorted = getSortedWords(m.name);
     if (mSorted === targetSorted && targetSorted.length > 0) return true;
 
-    const mWords = mSorted.split(' ');
-    const targetWords = targetSorted.split(' ');
+    const mWords = mSorted.split(' ').filter(Boolean);
+    const targetWords = targetSorted.split(' ').filter(Boolean);
     if (mWords.length > 0 && targetWords.length > 0 && Math.abs(mWords.length - targetWords.length) <= 1) {
       return targetWords.every(targetW => 
         mWords.some(mW => mW.startsWith(targetW) || targetW.startsWith(mW))
@@ -169,61 +208,118 @@ export const useSaccoStore = create((set, get) => ({
       }
     }
 
-    // 1. Merge duplicate members if any exist (runs once on startup)
-    const uniqueNames = {}
-    let hasDuplicates = false
+    // 1. Clean member names (strip zero-width spaces, invisible characters, trim)
     for (const m of members) {
-      if (!m.name || m.sheetSource === 'PHASE 3') continue
-      const cleanM = getSortedWords(m.name)
-      if (uniqueNames[cleanM]) {
-        hasDuplicates = true
-        break
+      if (!m.name) continue
+      const cleaned = cleanName(m.name)
+      if (m.name !== cleaned) {
+        m.name = cleaned
+        await db.saccoMembers.update(m.id, { name: cleaned })
+        pushRecordToSupabase('saccoMembers', { ...m, name: cleaned })
       }
-      uniqueNames[cleanM] = true
     }
 
-    if (hasDuplicates) {
-      console.log("⚠️ Found duplicate member records! Merging them...")
-      const processedCleanNames = {}
-      for (const m of members) {
-        if (!m.name || m.sheetSource === 'PHASE 3') continue
-        const cleanM = getSortedWords(m.name)
-        if (processedCleanNames[cleanM]) {
-          const primary = processedCleanNames[cleanM]
-          const primaryCats = Array.isArray(primary.category) ? primary.category : [primary.category || 'Saving Member']
-          const duplicateCats = Array.isArray(m.category) ? m.category : [m.category || 'Saving Member']
-          const newCats = Array.from(new Set([...primaryCats, ...duplicateCats]))
-          primary.category = newCats
+    // 2. Merge duplicate members if any exist (across ALL members, including Phase 3)
+    const nameGroups = {}
+    for (const m of members) {
+      if (!m.name) continue
+      const key = getSortedWords(m.name)
+      if (!key) continue
+      if (!nameGroups[key]) nameGroups[key] = []
+      nameGroups[key].push(m)
+    }
 
-          if (!primary.phone) primary.phone = m.phone
-          if (!primary.nin) primary.nin = m.nin
-          if (!primary.photo) primary.photo = m.photo
+    let mergedAny = false
+    for (const [key, group] of Object.entries(nameGroups)) {
+      if (group.length > 1) {
+        mergedAny = true
+        console.log(`⚠️ Found ${group.length} duplicates for "${key}". Merging...`)
 
-          await db.saccoMembers.update(primary.id, {
-            category: newCats,
-            phone: primary.phone,
-            nin: primary.nin,
-            photo: primary.photo
-          })
+        // Pick best primary: prefer member with savings > 50000, then has phone/nin, then non-Phase 3
+        group.sort((a, b) => {
+          const scoreA = ((Number(a.total) || 0) > 50000 ? 10 : 0) + (a.phone || a.nin ? 5 : 0) + (a.sheetSource !== 'PHASE 3' ? 2 : 0)
+          const scoreB = ((Number(b.total) || 0) > 50000 ? 10 : 0) + (b.phone || b.nin ? 5 : 0) + (b.sheetSource !== 'PHASE 3' ? 2 : 0)
+          return scoreB - scoreA
+        })
 
-          const userShares = await db.saccoShares.where({ memberId: m.id }).toArray()
-          for (const s of userShares) await db.saccoShares.update(s.id, { memberId: primary.id })
+        const primary = group[0]
+        const duplicates = group.slice(1)
 
-          const userSavings = await db.saccoSavings.where({ memberId: m.id }).toArray()
-          for (const s of userSavings) await db.saccoSavings.update(s.id, { memberId: primary.id })
+        let mergedCats = normalizeCategoryArray(primary.category)
 
-          const userInvestors = await db.saccoInvestors.where({ memberId: m.id }).toArray()
-          for (const i of userInvestors) await db.saccoInvestors.update(i.id, { memberId: primary.id })
+        for (const dup of duplicates) {
+          const dupCats = normalizeCategoryArray(dup.category)
+          mergedCats = normalizeCategoryArray([...mergedCats, ...dupCats])
 
-          const userYearlySavings = await db.saccoYearlySavings.where({ memberId: m.id }).toArray()
-          for (const y of userYearlySavings) await db.saccoYearlySavings.update(y.id, { memberId: primary.id })
+          if (!primary.phone && dup.phone) primary.phone = dup.phone
+          if (!primary.nin && dup.nin) primary.nin = dup.nin
+          if (!primary.photo && dup.photo) primary.photo = dup.photo
 
-          await db.saccoMembers.delete(m.id)
-        } else {
-          processedCleanNames[cleanM] = m
+          if ((Number(primary.total) || 0) <= 50000 && (Number(dup.total) || 0) > 50000) {
+            primary.total = dup.total
+            primary.jan = dup.jan || primary.jan
+            primary.feb = dup.feb || primary.feb
+            primary.mar = dup.mar || primary.mar
+            primary.apr = dup.apr || primary.apr
+            primary.may = dup.may || primary.may
+            primary.jun = dup.jun || primary.jun
+            primary.jul = dup.jul || primary.jul
+            primary.aug = dup.aug || primary.aug
+            primary.sep = dup.sep || primary.sep
+            primary.oct = dup.oct || primary.oct
+            primary.nov = dup.nov || primary.nov
+            primary.dec = dup.dec || primary.dec
+          }
+
+          // Re-point related records to primary
+          const dupShares = await db.saccoShares.where({ memberId: dup.id }).toArray()
+          for (const s of dupShares) {
+            await db.saccoShares.update(s.id, { memberId: primary.id })
+            pushRecordToSupabase('saccoShares', { ...s, memberId: primary.id })
+          }
+
+          const dupSavings = await db.saccoSavings.where({ memberId: dup.id }).toArray()
+          for (const s of dupSavings) {
+            await db.saccoSavings.update(s.id, { memberId: primary.id })
+            pushRecordToSupabase('saccoSavings', { ...s, memberId: primary.id })
+          }
+
+          const dupInvestors = await db.saccoInvestors.where({ memberId: dup.id }).toArray()
+          for (const i of dupInvestors) {
+            await db.saccoInvestors.update(i.id, { memberId: primary.id, name: primary.name })
+            pushRecordToSupabase('saccoInvestors', { ...i, memberId: primary.id, name: primary.name })
+          }
+
+          const dupTx = await db.saccoTransactions.where({ memberId: dup.id }).toArray()
+          for (const t of dupTx) {
+            await db.saccoTransactions.update(t.id, { memberId: primary.id })
+            pushRecordToSupabase('saccoTransactions', { ...t, memberId: primary.id })
+          }
+
+          const dupYearly = await db.saccoYearlySavings.where({ memberId: dup.id }).toArray()
+          for (const y of dupYearly) {
+            await db.saccoYearlySavings.update(y.id, { memberId: primary.id })
+            pushRecordToSupabase('saccoYearlySavings', { ...y, memberId: primary.id })
+          }
+
+          // Delete duplicate locally and in cloud
+          await db.saccoMembers.delete(dup.id)
+          await removeRecordFromSupabase('saccoMembers', dup.id)
         }
+
+        primary.category = mergedCats
+        await db.saccoMembers.update(primary.id, {
+          category: mergedCats,
+          phone: primary.phone || '',
+          nin: primary.nin || '',
+          photo: primary.photo || '',
+          total: primary.total || 0
+        })
+        await pushRecordToSupabase('saccoMembers', primary)
       }
-      // Re-fetch everything after merging
+    }
+
+    if (mergedAny) {
       members = await db.saccoMembers.toArray()
       shares = await db.saccoShares.toArray()
       investors = await db.saccoInvestors.toArray()
@@ -231,9 +327,44 @@ export const useSaccoStore = create((set, get) => ({
       yearlySavings = await db.saccoYearlySavings.toArray()
     }
 
-    // 2. Admin fee is read directly from Excel — no enforcement override.
+    // 3. Link investors to members and ensure members are identified as investors
+    for (const inv of investors) {
+      let matchedMember = members.find(m => m.id === inv.memberId)
+      if (!matchedMember && inv.name) {
+        matchedMember = findMatchingMember(members, inv.name)
+      }
+      if (matchedMember) {
+        const invUpdates = {}
+        if (!inv.name || inv.name !== matchedMember.name) {
+          invUpdates.name = matchedMember.name
+          inv.name = matchedMember.name
+        }
+        if (inv.memberId !== matchedMember.id) {
+          invUpdates.memberId = matchedMember.id
+          inv.memberId = matchedMember.id
+        }
+        if (Object.keys(invUpdates).length > 0) {
+          await db.saccoInvestors.update(inv.id, invUpdates)
+          pushRecordToSupabase('saccoInvestors', { ...inv, ...invUpdates })
+        }
 
-    // 3. Migrate any existing members' monthly data to saccoYearlySavings (for 2026)
+        // Ensure member's category contains Investor and investorType
+        const currentCats = normalizeCategoryArray(matchedMember.category)
+        const invType = inv.investorType || inv.category || 'Money Maker'
+        const newCats = Array.from(new Set([...currentCats, 'Investor', invType]))
+        // Update if 'Investor' tag missing OR investor type tag missing (not just length check)
+        const needsUpdate = !currentCats.includes('Investor') || !currentCats.includes(invType)
+        if (needsUpdate) {
+          matchedMember.category = newCats
+          await db.saccoMembers.update(matchedMember.id, { category: newCats })
+          pushRecordToSupabase('saccoMembers', { ...matchedMember, category: newCats })
+        }
+      }
+    }
+
+    // 4. Admin fee is read directly from Excel — no enforcement override.
+
+    // 5. Migrate any existing members' monthly data to saccoYearlySavings (for 2026)
     const selectedYear = get().selectedYear || '2026'
     if (yearlySavings.length === 0 && members.length > 0) {
       const nowNow = new Date().toISOString()
@@ -264,31 +395,28 @@ export const useSaccoStore = create((set, get) => ({
       yearlySavings = await db.saccoYearlySavings.toArray()
     }
 
-    // 4. Map the selected year's savings onto the member objects
+    // 6. Map the selected year's savings and investor details onto member objects
     const mappedMembers = members.map(m => {
       const yearly = yearlySavings.find(y => y.memberId === m.id && String(y.year) === selectedYear)
-      
-      let parsedCategory = [];
-      if (Array.isArray(m.category)) {
-        parsedCategory = m.category;
-      } else if (typeof m.category === 'string') {
-        try {
-          if (m.category.trim().startsWith('[')) {
-            parsedCategory = JSON.parse(m.category);
-          } else {
-            parsedCategory = m.category.split(',').map(c => c.trim()).filter(Boolean);
-          }
-        } catch (_) {
-          parsedCategory = [m.category];
-        }
+      const parsedCategory = normalizeCategoryArray(m.category)
+
+      const invObj = investors.find(i => i.memberId === m.id || (m.name && i.name && cleanName(i.name).toLowerCase() === cleanName(m.name).toLowerCase()))
+      const investmentAmount = Number(invObj?.investmentAmount) || 0
+      const isInvestor = parsedCategory.some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || !!invObj || investmentAmount > 0
+
+      if (isInvestor && !parsedCategory.includes('Investor')) {
+        parsedCategory.push('Investor')
       }
-      if (parsedCategory.length === 0) {
-        parsedCategory = ['Saving Member'];
+      if (invObj?.investorType && !parsedCategory.includes(invObj.investorType)) {
+        parsedCategory.push(invObj.investorType)
       }
 
       return {
         ...m,
         category: parsedCategory,
+        investmentAmount,
+        investorType: invObj?.investorType || (isInvestor ? 'Money Maker' : null),
+        isInvestor,
         jan: yearly?.jan || 0,
         feb: yearly?.feb || 0,
         mar: yearly?.mar || 0,
@@ -301,7 +429,7 @@ export const useSaccoStore = create((set, get) => ({
         oct: yearly?.oct || 0,
         nov: yearly?.nov || 0,
         dec: yearly?.dec || 0,
-        total: yearly?.total || 0
+        total: yearly?.total || m.total || 0
       }
     })
 
@@ -310,12 +438,23 @@ export const useSaccoStore = create((set, get) => ({
 
 
   addMember: async (member, financialYear = '2026') => {
+    // Prevent duplicate names: check if member with this name already exists
+    const existing = findMatchingMember(get().members, member.name)
+    if (existing) {
+      const mergedCats = normalizeCategoryArray([...(existing.category || []), ...(Array.isArray(member.category) ? member.category : [member.category || 'Saving Member'])])
+      return await get().updateMember(existing.id, {
+        ...existing,
+        ...member,
+        category: mergedCats
+      }, financialYear)
+    }
+
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
     
     // Ensure category is an array for multiple selections
-    const categoryArray = Array.isArray(member.category) ? member.category : [member.category || 'Saving Member']
-    const record = { ...member, category: categoryArray, id, createdAt: now }
+    const categoryArray = normalizeCategoryArray(member.category)
+    const record = { ...member, name: cleanName(member.name), category: categoryArray, id, createdAt: now }
     
     await db.saccoMembers.add(record)
     pushRecordToSupabase('saccoMembers', record)
@@ -489,12 +628,16 @@ export const useSaccoStore = create((set, get) => ({
     
     if (existing) {
       await db.saccoShares.update(existing.id, { shareCount: count })
+      pushRecordToSupabase('saccoShares', { ...existing, shareCount: count })
     } else {
-      await db.saccoShares.add({
+      const newRec = {
+        id: crypto.randomUUID(),
         memberId,
         shareCount: count,
         createdAt: new Date().toISOString()
-      })
+      }
+      await db.saccoShares.add(newRec)
+      pushRecordToSupabase('saccoShares', newRec)
     }
     await get().loadSaccoData()
   },
@@ -502,18 +645,23 @@ export const useSaccoStore = create((set, get) => ({
   updateSavings: async (memberId, savingAmount) => {
     const existing = get().savings.find(s => s.memberId === memberId)
     const amount = Number(savingAmount) || 0
+    const now = new Date().toISOString()
     
     if (existing) {
       await db.saccoSavings.update(existing.id, { 
         savingAmount: amount,
-        updatedAt: new Date().toISOString() 
+        updatedAt: now 
       })
+      pushRecordToSupabase('saccoSavings', { ...existing, savingAmount: amount, updatedAt: now })
     } else {
-      await db.saccoSavings.add({
+      const newRec = {
+        id: crypto.randomUUID(),
         memberId,
         savingAmount: amount,
-        updatedAt: new Date().toISOString()
-      })
+        updatedAt: now
+      }
+      await db.saccoSavings.add(newRec)
+      pushRecordToSupabase('saccoSavings', newRec)
     }
     await get().loadSaccoData()
   },
@@ -533,18 +681,21 @@ export const useSaccoStore = create((set, get) => ({
       return { success: false, error: `Insufficient savings. Need ${cost.toLocaleString()} UGX but only have ${savingsObj.savingAmount.toLocaleString()} UGX.` }
     }
     
+    const now = new Date().toISOString()
     // Deduct from savings
     const newSavingsAmount = savingsObj.savingAmount - cost
     await db.saccoSavings.update(savingsObj.id, {
       savingAmount: newSavingsAmount,
-      updatedAt: new Date().toISOString()
+      updatedAt: now
     })
+    pushRecordToSupabase('saccoSavings', { ...savingsObj, savingAmount: newSavingsAmount, updatedAt: now })
     
     // Add to shares
     const newSharesCount = sharesObj.shareCount + countToBuy
     await db.saccoShares.update(sharesObj.id, {
       shareCount: newSharesCount
     })
+    pushRecordToSupabase('saccoShares', { ...sharesObj, shareCount: newSharesCount })
     
     // Add transaction to ledger
     await get().addTransaction({
@@ -650,8 +801,11 @@ export const useSaccoStore = create((set, get) => ({
         const memberRec = await db.saccoMembers.get(targetMemberId).catch(() => null)
         if (memberRec) {
           let memberCats = Array.isArray(memberRec.category) ? [...memberRec.category] : [memberRec.category || 'Member']
-          memberCats = memberCats.filter(c => !['Money Maker', 'New Farmer', 'Investor', 'Phase 3'].includes(c))
-          memberCats.push(validInvestorType)
+          // Remove old investor-type tags but keep non-investor categories (Saving Member, Pioneer, etc.)
+          memberCats = memberCats.filter(c => !['Money Maker', 'New Farmer', 'Phase 3'].includes(c))
+          // Always keep 'Investor' tag + add the specific investor type
+          if (!memberCats.includes('Investor')) memberCats.push('Investor')
+          if (!memberCats.includes(validInvestorType)) memberCats.push(validInvestorType)
           await db.saccoMembers.update(targetMemberId, { category: memberCats })
           const freshMember = await db.saccoMembers.get(targetMemberId).catch(() => null)
           if (freshMember) pushRecordToSupabase('saccoMembers', freshMember)
@@ -967,18 +1121,15 @@ export const useSaccoStore = create((set, get) => ({
         noOfShares   = parseNum(row['__EMPTY_21'])
       }
 
-      // Try to match existing member using fuzzy matching (skip for PHASE 3 to prevent mixing investors into general members)
-      let existingMember = null
-      if (sheetName !== 'PHASE 3') {
-        existingMember = findMatchingMember(existingMembers, nameVal)
-      }
+      // Match existing member using fuzzy matching across all sheets to prevent duplicate records
+      let existingMember = findMatchingMember(existingMembers, nameVal)
       let memberId
 
       if (existingMember) {
         memberId = existingMember.id
         // Update member with latest data but keep categories merged
-        const existingCats = Array.isArray(existingMember.category) ? existingMember.category : [existingMember.category || 'Saving Member']
-        const mergedCats = Array.from(new Set([...existingCats, ...categoryArray]))
+        const existingCats = normalizeCategoryArray(existingMember.category)
+        const mergedCats = normalizeCategoryArray([...existingCats, ...categoryArray])
         await db.saccoMembers.update(memberId, {
           correctBalance, total, shares: sharesAmt,
           admin, savings, mandatory, withdrawable, requested, difference, noOfShares,
@@ -1000,6 +1151,45 @@ export const useSaccoStore = create((set, get) => ({
         const existingSaving = await db.saccoSavings.where('memberId').equals(memberId).first()
         if (existingSaving) {
           await db.saccoSavings.update(existingSaving.id, { savingAmount: savings || existingSaving.savingAmount, updatedAt: now })
+        }
+
+        // If category contains Investor or New Farmer (PHASE 3), link/update investor record
+        if (categoryArray.includes('Investor') || categoryArray.includes('New Farmer') || isPhase3) {
+          const programAmt  = isPhase3 ? sharesAmt : 8000000
+          const paidAmt     = isPhase3 ? savings   : 8000000
+          const balanceAmt  = isPhase3 ? difference : 0
+          const investorType = categoryArray.includes('New Farmer') ? 'New Farmer' : 'Money Maker'
+          const moneyMakerPayout = Math.round((programAmt / 8000000) * 350000)
+          const isCleared = (balanceAmt === 0 && paidAmt > 0) || paidAmt >= programAmt
+          const existingInv = await db.saccoInvestors.where('memberId').equals(memberId).first()
+          if (existingInv) {
+            await db.saccoInvestors.update(existingInv.id, {
+              name: cleanedName,
+              category: investorType,
+              investorType,
+              investmentPhase: 'Phase 3',
+              programAmount: programAmt,
+              investmentAmount: paidAmt,
+              balance: balanceAmt,
+              status: isCleared ? 'CLEARED' : 'PENDING'
+            })
+          } else {
+            await db.saccoInvestors.add({
+              id: crypto.randomUUID(),
+              memberId,
+              name: cleanedName,
+              category: investorType,
+              investorType,
+              investmentPhase: 'Phase 3',
+              programAmount: programAmt,
+              investmentAmount: paidAmt,
+              balance: balanceAmt,
+              moneyMakerAmount: moneyMakerPayout,
+              cowsPerYear: 0,
+              status: isCleared ? 'CLEARED' : 'PENDING',
+              createdAt: now
+            })
+          }
         }
       } else {
         // Create new member record

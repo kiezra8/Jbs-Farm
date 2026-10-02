@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react'
 import Modal from '../../components/ui/Modal'
-import { Users, Coins, PiggyBank, TrendingUp, Save, List, Plus } from 'lucide-react'
+import { Users, Coins, PiggyBank, TrendingUp, Save, List, Plus, Edit2, AlertCircle } from 'lucide-react'
 import { formatUGX } from '../../utils/formatters'
 import { useSaccoStore } from '../../store/useSaccoStore'
 import { format } from 'date-fns'
+
+const cleanStr = (str) => {
+  if (!str) return ''
+  return String(str)
+    .replace(/[\u200B-\u200D\uFEFF\u2060\u00A0]/g, '')
+    .trim()
+    .toLowerCase()
+}
 
 export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
   const { 
@@ -37,11 +45,25 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
   const [isBanked, setIsBanked] = useState(false)
   const [investorAddPayment, setInvestorAddPayment] = useState('')
 
-  const member = members.find(m => m.id === memberId)
-  const memberShares = shares.find(s => s.memberId === memberId)
-  const memberSavings = savings.find(s => s.memberId === memberId)
-  const memberInvestor = investors.find(i => i.memberId === memberId)
-  const memberTransactions = memberId ? getMemberTransactions(memberId) : []
+  // Resolve member: match by ID, or match by investor record, or fallback
+  const resolvedInvestor = investors.find(i => i.id === memberId || i.memberId === memberId)
+  const rawMember = members.find(m => m.id === memberId) ||
+    (resolvedInvestor?.memberId ? members.find(m => m.id === resolvedInvestor.memberId) : null) ||
+    (resolvedInvestor?.name ? members.find(m => cleanStr(m.name) === cleanStr(resolvedInvestor.name)) : null) ||
+    (resolvedInvestor ? {
+      id: resolvedInvestor.memberId || resolvedInvestor.id,
+      name: resolvedInvestor.name || 'Investor',
+      category: ['Saving Member', 'Investor', resolvedInvestor.investorType || 'Money Maker'],
+      total: Number(resolvedInvestor.investmentAmount) || 0,
+      noOfShares: 1,
+      admin: 50000
+    } : null)
+
+  const member = rawMember
+  const memberShares = shares.find(s => s.memberId === member?.id)
+  const memberSavings = savings.find(s => s.memberId === member?.id)
+  const memberInvestor = resolvedInvestor || investors.find(i => i.memberId === member?.id || (member?.name && i.name && cleanStr(i.name) === cleanStr(member.name)))
+  const memberTransactions = member?.id ? getMemberTransactions(member.id) : []
 
   // Auto-compute total whenever monthly fields change
   const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
@@ -92,9 +114,21 @@ export default function MemberDetailsModal({ isOpen, onClose, memberId }) {
     }
   }, [member, memberShares, memberSavings, memberInvestor, isOpen])
 
-  if (!member) return null
+  if (!member) {
+    if (!isOpen) return null
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Member Details">
+        <div className="p-8 text-center space-y-3">
+          <AlertCircle className="w-12 h-12 text-amber-400 mx-auto opacity-70" />
+          <p className="text-white font-semibold">Member Record Not Found</p>
+          <p className="text-xs text-slate-400">Could not locate member details for the requested ID.</p>
+          <button onClick={onClose} className="btn-secondary text-xs px-4 py-1.5 mt-2">Close</button>
+        </div>
+      </Modal>
+    )
+  }
 
-  const isInvestor = (Array.isArray(biodata.category) ? biodata.category : [biodata.category]).some(c => ['Investor', 'Money Maker', 'New Farmer'].includes(c)) || memberInvestor !== undefined;
+  const isInvestor = (Array.isArray(biodata.category) ? biodata.category : [biodata.category]).some(c => ['Investor', 'Money Maker', 'New Farmer', 'Phase 3'].includes(c)) || !!memberInvestor || (Number(memberInvestor?.investmentAmount) || 0) > 0;
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0]
