@@ -24,6 +24,7 @@ export default function Milk() {
 
   const initialForm = { animalId: '', date: format(new Date(), 'yyyy-MM-dd'), morning: '', afternoon: '', evening: '', calvesAmount: '', focusSession: 'morning' }
   const [formData, setFormData] = useState(initialForm)
+  const [isSaving, setIsSaving] = useState(false)
   const [selectedDateFilter, setSelectedDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedWeekDate, setSelectedWeekDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [weeklyCowFilter, setWeeklyCowFilter] = useState('all')
@@ -840,6 +841,9 @@ export default function Milk() {
       alert('Please select a cow by typing its name or tag')
       return
     }
+    if (isSaving) return
+    setIsSaving(true)
+
     const cow = unifiedCows.find(a => String(a.id) === String(formData.animalId)) || animals.find(a => String(a.id) === String(formData.animalId))
     const tagNumber = cow?.tagNumber || formData.tagNumber || ''
     const animalName = cow?.name || formData.animalName || 'Cow'
@@ -856,53 +860,58 @@ export default function Milk() {
     // Filter existing records for this cow on this date
     const cowDateRecords = records.filter(r => String(r.animalId) === String(formData.animalId) && r.date === targetDate)
 
-    let calvesAssigned = false
-    for (const item of sessionInputs) {
-      const existing = cowDateRecords.filter(r => r.session === item.session)
-      const calvesForThis = !calvesAssigned && item.val > 0 ? totalCalves : 0
-      if (item.val > 0) calvesAssigned = true
-
-      if (item.val > 0) {
-        if (existing.length > 0) {
-          // Update primary existing record with correct amount
-          await updateRecord(existing[0].id, {
-            amount: item.val,
-            calvesAmount: calvesForThis,
-            animalId: formData.animalId,
-            tagNumber,
-            animalName,
-            date: targetDate,
-            session: item.session
-          })
-          // Clean up any extra duplicate records from past accidental double-entries
-          for (let i = 1; i < existing.length; i++) {
-            await deleteRecord(existing[i].id)
-          }
-        } else {
-          // Add new record for this session
-          await addRecord({
-            animalId: formData.animalId,
-            tagNumber,
-            animalName,
-            date: targetDate,
-            session: item.session,
-            amount: item.val,
-            calvesAmount: calvesForThis
-          })
-        }
-      } else {
-        // If amount was cleared or set to 0, clean up any existing records for that session
-        for (const r of existing) {
-          await deleteRecord(r.id)
-        }
-      }
-    }
-
+    // Close modal immediately — local IndexedDB writes are instant
     setIsModalOpen(false)
     setEditingRecord(null)
     setEditingRow(null)
     setFormData(initialForm)
     setCowTypeQuery('')
+
+    try {
+      let calvesAssigned = false
+      for (const item of sessionInputs) {
+        const existing = cowDateRecords.filter(r => r.session === item.session)
+        const calvesForThis = !calvesAssigned && item.val > 0 ? totalCalves : 0
+        if (item.val > 0) calvesAssigned = true
+
+        if (item.val > 0) {
+          if (existing.length > 0) {
+            // Update primary existing record with correct amount
+            await updateRecord(existing[0].id, {
+              amount: item.val,
+              calvesAmount: calvesForThis,
+              animalId: formData.animalId,
+              tagNumber,
+              animalName,
+              date: targetDate,
+              session: item.session
+            })
+            // Clean up any extra duplicate records from past accidental double-entries
+            for (let i = 1; i < existing.length; i++) {
+              await deleteRecord(existing[i].id)
+            }
+          } else {
+            // Add new record for this session
+            await addRecord({
+              animalId: formData.animalId,
+              tagNumber,
+              animalName,
+              date: targetDate,
+              session: item.session,
+              amount: item.val,
+              calvesAmount: calvesForThis
+            })
+          }
+        } else {
+          // If amount was cleared or set to 0, clean up any existing records for that session
+          for (const r of existing) {
+            await deleteRecord(r.id)
+          }
+        }
+      }
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const columns = [
@@ -1939,7 +1948,7 @@ export default function Milk() {
                 </div>
 
                 <div className="col-span-1">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Given to Calves (L)</label>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">🍼 Daily Total Given to Calves (L)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -1949,6 +1958,7 @@ export default function Milk() {
                     onChange={e => setFormData({ ...formData, calvesAmount: e.target.value })}
                     placeholder="0.0"
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">Total milk for all calves today (all sessions combined)</p>
                 </div>
 
                 <div className="col-span-1 flex flex-col justify-end">
@@ -1964,7 +1974,11 @@ export default function Milk() {
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
             <button type="button" className="btn-secondary" onClick={() => { setIsModalOpen(false); setEditingRecord(null); setEditingRow(null); setFormData(initialForm) }}>Cancel</button>
-            <button type="submit" className="btn-primary">Save Record</button>
+            <button type="submit" className="btn-primary flex items-center gap-2" disabled={isSaving}>
+              {isSaving ? (
+                <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full" />Saving...</>
+              ) : 'Save Record'}
+            </button>
           </div>
         </form>
       </Modal>

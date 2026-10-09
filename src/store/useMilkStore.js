@@ -19,14 +19,13 @@ export const useMilkStore = create((set, get) => ({
     const id = crypto.randomUUID()
     const record = { ...data, id, createdAt: now, updatedAt: now }
     await db.milkRecords.add(record)
+    // Fire-and-forget: Dexie hooks already queue this to Firebase
     try {
       const firestore = getFirestoreDb()
       if (firestore) {
-        await setDoc(doc(firestore, 'milkRecords', String(id)), record, { merge: true })
+        setDoc(doc(firestore, 'milkRecords', String(id)), record, { merge: true }).catch(() => {})
       }
-    } catch (e) {
-      console.warn('Firestore direct add milk record warning:', e)
-    }
+    } catch (e) {}
     set(s => ({ records: [record, ...s.records] }))
     return record
   },
@@ -35,28 +34,26 @@ export const useMilkStore = create((set, get) => ({
     const now = new Date().toISOString()
     await db.milkRecords.update(id, { ...data, updatedAt: now })
     const record = await db.milkRecords.get(id)
+    // Fire-and-forget: Dexie hooks already queue this to Firebase
     try {
       const firestore = getFirestoreDb()
       if (firestore && record) {
-        await setDoc(doc(firestore, 'milkRecords', String(id)), record, { merge: true })
+        setDoc(doc(firestore, 'milkRecords', String(id)), record, { merge: true }).catch(() => {})
       }
-    } catch (e) {
-      console.warn('Firestore direct update milk record warning:', e)
-    }
+    } catch (e) {}
     set(s => ({ records: s.records.map(r => r.id === id ? record : r) }))
     return record
   },
 
   deleteRecord: async (id) => {
     await db.milkRecords.delete(id)
+    // Fire-and-forget: Dexie hooks already queue this to Firebase
     try {
       const firestore = getFirestoreDb()
       if (firestore) {
-        await deleteDoc(doc(firestore, 'milkRecords', String(id)))
+        deleteDoc(doc(firestore, 'milkRecords', String(id))).catch(() => {})
       }
-    } catch (e) {
-      console.warn('Firestore direct delete milk record warning:', e)
-    }
+    } catch (e) {}
     set(s => ({ records: s.records.filter(r => r.id !== id) }))
   },
 

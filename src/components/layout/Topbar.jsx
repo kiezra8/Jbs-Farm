@@ -56,20 +56,22 @@ export default function Topbar() {
       <div className="flex items-center gap-2">
         {/* Sync Status */}
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+          title={isSyncing ? 'Data is saved locally. Cloud backup in progress...' : syncError ? 'Sync failed — data saved locally, will retry automatically' : isOnline ? `Last cloud sync at ${lastSynced ? format(new Date(lastSynced), 'HH:mm') : '—'}` : 'Offline — changes saved locally and will sync when reconnected'}
+        >
           {isSyncing ? (
-            <RefreshCw size={13} className="animate-spin text-amber-400" />
+            <RefreshCw size={13} className="animate-spin text-slate-400" />
           ) : isOnline ? (
             <Wifi size={13} className="text-green-400" />
           ) : (
             <WifiOff size={13} className="text-red-400" />
           )}
-          <span className={syncError ? 'text-red-500 font-bold' : isSyncing ? 'text-amber-400' : isOnline ? 'text-green-400' : 'text-red-400'}>
-            {syncError ? `Sync Error: ${syncError}` : isSyncing ? 'Syncing...' : isOnline ? lastSyncText : 'Offline'}
+          <span className={syncError ? 'text-red-500 font-bold' : isSyncing ? 'text-slate-400' : isOnline ? 'text-green-400' : 'text-red-400'}>
+            {syncError ? 'Sync error' : isSyncing ? 'Backing up...' : isOnline ? lastSyncText : 'Offline'}
           </span>
           {queueCount > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px]">
-              {queueCount} pending
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 text-[10px]">
+              {queueCount} queued
             </span>
           )}
         </div>
